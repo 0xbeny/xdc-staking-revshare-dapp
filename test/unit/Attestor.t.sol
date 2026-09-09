@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {Attestor} from "../../src/adapters/Attestor.sol";
 import {Base} from "../Base.t.sol";
+import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 contract AttestorTest is Base {
     function setUp() public override {
@@ -105,20 +106,31 @@ contract AttestorTest is Base {
         assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 0);
     }
 
-    function test_onlyReporterCanPost() public {
+    function test_onlyReporterRoleCanPost() public {
+        bytes32 role = attestor.REPORTER_ROLE();
+        uint64 sourceEpoch = uint64(_currentEpoch() - 1);
         vm.prank(alice);
-        vm.expectRevert(Attestor.NotReporter.selector);
-        attestor.postRevenue(dapp, address(usdc), uint64(_currentEpoch() - 1), 1000e6, 0, "");
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, role));
+        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 1000e6, 0, "");
     }
 
-    function test_onlyTimelockRotatesTheReporter() public {
-        vm.prank(alice);
-        vm.expectRevert(Attestor.NotTimelock.selector);
-        attestor.setReporter(alice);
+    /// @dev The reporter is an AccessControl role administered by the timelock, like every other
+    ///      role in the system: rotation is grant + revoke, and several reporters can coexist.
+    function test_onlyTimelockAdministersTheReporterRole() public {
+        bytes32 role = attestor.REPORTER_ROLE();
+        bytes32 admin = attestor.DEFAULT_ADMIN_ROLE();
 
-        vm.prank(timelock);
-        attestor.setReporter(bob);
-        assertEq(attestor.reporter(), bob);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, admin));
+        attestor.grantRole(role, alice);
+
+        vm.startPrank(timelock);
+        attestor.grantRole(role, bob);
+        attestor.revokeRole(role, reporter);
+        vm.stopPrank();
+
+        assertTrue(attestor.hasRole(role, bob));
+        assertFalse(attestor.hasRole(role, reporter));
     }
 
     function test_attestorHasNoUpgradePathAndNoMutableRecords() public {

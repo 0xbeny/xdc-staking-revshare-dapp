@@ -3,6 +3,8 @@ pragma solidity 0.8.28;
 
 import {IFeeDistributor} from "../interfaces/IFeeDistributor.sol";
 import {EpochTime} from "../libraries/EpochTime.sol";
+import {Roles} from "../libraries/Roles.sol";
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -19,7 +21,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///
 ///      `sourceEpoch` is metadata for dashboards and reconciliation. `distributionEpoch` is
 ///      assigned at receipt and can never be chosen by the reporter (§3.2 #8).
-contract Attestor {
+contract Attestor is AccessControl {
     using SafeERC20 for IERC20;
 
     struct Record {
@@ -34,11 +36,10 @@ contract Attestor {
         uint64 postedAt;
     }
 
-    address public immutable DISTRIBUTOR;
-    /// @notice Only the timelock may rotate the reporter. There is no upgrade path.
-    address public immutable TIMELOCK;
+    bytes32 public constant REPORTER_ROLE = Roles.REPORTER;
 
-    address public reporter;
+    address public immutable DISTRIBUTOR;
+
     mapping(bytes32 key => Record) private _records;
     mapping(bytes32 key => bool) public posted;
     mapping(address dapp => mapping(address token => uint256)) public lifetimeNet;
@@ -54,33 +55,19 @@ contract Attestor {
         uint256 net,
         bytes32 metadataHash
     );
-    event ReporterSet(address indexed oldReporter, address indexed newReporter);
-
     error ZeroAddress();
-    error NotReporter();
-    error NotTimelock();
     error DuplicateRecord();
     error SourceEpochNotClosed();
     error NegativeNet();
 
-    constructor(address distributor_, address timelock_, address reporter_) {
-        if (distributor_ == address(0) || timelock_ == address(0) || reporter_ == address(0)) {
+    /// @param admin The timelock. Grants and revokes `REPORTER_ROLE`; nothing else is mutable.
+    constructor(address distributor_, address admin, address reporter_) {
+        if (distributor_ == address(0) || admin == address(0) || reporter_ == address(0)) {
             revert ZeroAddress();
         }
         DISTRIBUTOR = distributor_;
-        TIMELOCK = timelock_;
-        reporter = reporter_;
-    }
-
-    function setReporter(address newReporter) external {
-        if (msg.sender != TIMELOCK) {
-            revert NotTimelock();
-        }
-        if (newReporter == address(0)) {
-            revert ZeroAddress();
-        }
-        emit ReporterSet(reporter, newReporter);
-        reporter = newReporter;
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(REPORTER_ROLE, reporter_);
     }
 
     function key(address dapp, address token, uint64 sourceEpoch) public pure returns (bytes32) {
@@ -100,10 +87,7 @@ contract Attestor {
         uint256 gross,
         int256 adjustment,
         bytes32 metadataHash
-    ) external returns (uint256 net) {
-        if (msg.sender != reporter) {
-            revert NotReporter();
-        }
+    ) external onlyRole(REPORTER_ROLE) returns (uint256 net) {
         if (dapp == address(0)) {
             revert ZeroAddress();
         }

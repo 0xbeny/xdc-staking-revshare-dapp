@@ -56,6 +56,14 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint64 penaltyCapBps;
     }
 
+    struct ExitQuote {
+        uint256 returned;
+        uint256 penalty;
+        uint256 penaltyBps;
+        uint256 toLockers;
+        uint256 toTreasury;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
@@ -161,7 +169,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 toTreasury,
         uint256 penaltyBps
     );
-    event PenaltyCapUpdated(uint256 tokenId, uint256 oldCap, uint256 newCap);
+    event PenaltyCapUpdated(uint256 indexed tokenId, uint256 oldCap, uint256 newCap);
     event GlobalCheckpoint(uint256 indexed epochIndex, int128 bias, int128 slope, uint256 ts);
     event MaxPenaltyBpsSet(uint256 oldValue, uint256 newValue);
     event PenaltySplitBpsSet(uint256 oldValue, uint256 newValue);
@@ -180,7 +188,6 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error ZeroAmount();
     error DurationNotWeekAligned();
     error DurationOutOfRange();
-    error LockNotFound();
     error LockClosed();
     error LockExpired();
     error LockNotExpired();
@@ -647,7 +654,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (amount == 0) {
             revert ZeroAmount();
         }
-        Lock memory oldLock = _requireOpenLock(tokenId);
+        (, Lock memory oldLock) = _openLockOf(tokenId);
         if (oldLock.end <= block.timestamp) {
             revert LockExpired();
         }
@@ -672,8 +679,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Extends a lock. Never changes the position's penalty cap (spec §3.4).
     /// @param newUnlock Absolute timestamp; rounded UP to the next week boundary.
     function increaseUnlockTime(uint256 tokenId, uint256 newUnlock) public nonReentrant {
-        Lock memory oldLock = _requireOpenLock(tokenId);
-        address owner = _requireOwned(tokenId);
+        (address owner, Lock memory oldLock) = _openLockOf(tokenId);
         if (msg.sender != owner && !_operators[owner][msg.sender]) {
             revert NotAuthorized();
         }
@@ -707,11 +713,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Full principal after expiry. Unconditional under any periphery state.
     function withdraw(uint256 tokenId) external nonReentrant {
-        address owner = _requireOwned(tokenId);
+        (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (msg.sender != owner) {
             revert NotAuthorized();
         }
-        Lock memory lock = _requireOpenLock(tokenId);
         if (lock.end > block.timestamp) {
             revert LockNotExpired();
         }
@@ -728,17 +733,15 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Early exit against a penalty. Reads only escrow storage — no external call for
     ///         parameters or logic, so it cannot be bricked by any other contract (spec §2).
     function emergencyExit(uint256 tokenId) external nonReentrant {
-        address owner = _requireOwned(tokenId);
+        (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (msg.sender != owner) {
             revert NotAuthorized();
         }
-        Lock memory lock = _requireOpenLock(tokenId);
         if (lock.end <= block.timestamp) {
             revert LockNotExpired();
         }
 
-        (uint256 returned, uint256 penalty, uint256 penaltyBps) = _quoteExit(lock);
-        uint256 toTreasury = (penalty * penaltySplitBps) / BPS;
+        ExitQuote memory q = _quoteExit(lock);
 
         _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
         // Recorded *after* the rewrite so the figure is read from exactly the state the
@@ -752,17 +755,17 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         totalLocked -= lock.amount;
 
         IERC20 erc20 = IERC20(token);
-        if (returned > 0) {
-            erc20.safeTransfer(owner, returned);
+        if (q.returned > 0) {
+            erc20.safeTransfer(owner, q.returned);
         }
-        if (penalty - toTreasury > 0) {
-            erc20.safeTransfer(distributor, penalty - toTreasury);
+        if (q.toLockers > 0) {
+            erc20.safeTransfer(distributor, q.toLockers);
         }
-        if (toTreasury > 0) {
-            erc20.safeTransfer(treasury, toTreasury);
+        if (q.toTreasury > 0) {
+            erc20.safeTransfer(treasury, q.toTreasury);
         }
 
-        emit EmergencyExit(tokenId, owner, returned, penalty, penalty - toTreasury, toTreasury, penaltyBps);
+        emit EmergencyExit(tokenId, owner, q.returned, q.penalty, q.toLockers, q.toTreasury, q.penaltyBps);
     }
 
     /// @dev The in-progress epoch share is forfeited: record the snapshot weight this position
@@ -778,13 +781,17 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         exitEpoch[tokenId] = currentEpoch_;
     }
 
-    function _quoteExit(Lock memory lock) private view returns (uint256 returned, uint256 penalty, uint256 penaltyBps) {
+    /// @dev The whole exit arithmetic in one place, for both the exit itself and the UI quote.
+    function _quoteExit(Lock memory lock) private view returns (ExitQuote memory q) {
         uint256 remaining = lock.end - block.timestamp;
         uint256 eff = remaining > MAX_LOCK ? MAX_LOCK : remaining;
         uint256 cap = lock.penaltyCapBps < maxPenaltyBps ? lock.penaltyCapBps : maxPenaltyBps;
-        penaltyBps = (cap * eff) / MAX_LOCK;
-        penalty = (uint256(lock.amount) * penaltyBps) / BPS;
-        returned = lock.amount - penalty;
+
+        q.penaltyBps = (cap * eff) / MAX_LOCK;
+        q.penalty = (uint256(lock.amount) * q.penaltyBps) / BPS;
+        q.returned = lock.amount - q.penalty;
+        q.toTreasury = (q.penalty * penaltySplitBps) / BPS;
+        q.toLockers = q.penalty - q.toTreasury;
     }
 
     /// @notice Quote for the UI: what an early exit costs right now.
@@ -797,7 +804,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (lock.amount == 0 || lock.end <= block.timestamp) {
             return (lock.amount, 0, 0);
         }
-        return _quoteExit(lock);
+        ExitQuote memory q = _quoteExit(lock);
+        return (q.returned, q.penalty, q.penaltyBps);
     }
 
     /// @notice Effective cap for a position: global reductions apply immediately, increases never do.
@@ -826,15 +834,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
                                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    function _requireOpenLock(uint256 tokenId) private view returns (Lock memory lock) {
-        _requireOwned(tokenId);
+    /// @dev An open position always has a non-zero amount, so `closed` is the only liveness flag.
+    function _openLockOf(uint256 tokenId) private view returns (address owner, Lock memory lock) {
+        owner = _requireOwned(tokenId);
         if (closed[tokenId]) {
             revert LockClosed();
         }
         lock = _locked[tokenId];
-        if (lock.amount == 0) {
-            revert LockNotFound();
-        }
     }
 
     /// @dev Protocol-support policy, not a cryptographic guarantee (spec §3.1 #10): a

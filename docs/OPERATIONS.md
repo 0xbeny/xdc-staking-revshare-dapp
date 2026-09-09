@@ -59,5 +59,5 @@ Rounding dust (at most one wei per claim) stays in the contract and is never los
 | Adapter compromised / dApp terms breached | Timelock: `registry.deactivateAdapter(adapter)`. It can no longer notify. Funds already notified stay claimable. |
 | Distributor bug suspected | Guardian: `distributor.pause()`. Users can still `withdraw` and `emergencyExit`. Timelock proposes an upgrade. |
 | Keeper key compromised | Timelock: `revokeRole(KEEPER_ROLE, old)`, `grantRole(KEEPER_ROLE, new)`. The keeper can only extend opted-in locks and compound opted-in rewards; it cannot move principal or redirect claims. |
-| Reporter (Mode C) key compromised | Timelock: `attestor.setReporter(new)`. Records are immutable; a bad record is corrected by a later negative adjustment. |
+| Reporter (Mode C) key compromised | Timelock: `attestor.revokeRole(REPORTER_ROLE, old)`, `grantRole(REPORTER_ROLE, new)`. Records are immutable; a bad record is corrected by a later negative adjustment. |
 | Missed `keepAtMaxLock` window | Nothing to do on-chain. Communicate; the decayed snapshot stands for that week. |

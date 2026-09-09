@@ -12,6 +12,8 @@
 | **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
 | **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
 
+Every AccessControl role id lives in [`src/libraries/Roles.sol`](../src/libraries/Roles.sol), whose NatSpec carries the role → holder → contract → power matrix. `DEFAULT_ADMIN_ROLE` administers every role and is held by the timelock alone after deployment. The immutable escrow deliberately uses a single two-step-transferable `timelock` address instead of AccessControl: one privileged actor, clamped powers, nothing delegated.
+
 ## Principal safety
 
 - All principal is in `VotingEscrow`, which has no upgrade path, no owner and no `selfdestruct`.

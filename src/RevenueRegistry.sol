@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
+import {Roles} from "./libraries/Roles.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -9,8 +10,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 /// @notice Metadata plane for the revenue standard: whitelisting, terms, mode, version and
 ///         lifetime contribution. It never holds funds and never holds an allowance (§3.2).
 contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgradeable {
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-    bytes32 public constant REGISTRY_ADMIN_ROLE = keccak256("REGISTRY_ADMIN_ROLE");
+    bytes32 public constant UPGRADER_ROLE = Roles.UPGRADER;
+    bytes32 public constant REGISTRY_ADMIN_ROLE = Roles.REGISTRY_ADMIN;
 
     address public distributor;
 
