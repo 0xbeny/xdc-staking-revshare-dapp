@@ -11,7 +11,8 @@ SLITHER ?= $(if $(wildcard .venv/bin/slither),.venv/bin/slither,slither)
 
 .PHONY: ci fmt-check lint-ci lint-tests sizes slither slither-install \
         build test test-unit test-e2e test-fuzz test-invariant test-invariant-strict coverage lint fmt \
-        anvil deploy-local deploy-apothem deploy-mainnet deploy-adapter clean
+        anvil deploy-local deploy-apothem-mocks deploy-apothem deploy-apothem-pk deploy-apothem-continue \
+        deploy-mainnet deploy-adapter clean
 
 ## The full local gate — the same steps the on-demand GitHub workflow runs.
 ci: fmt-check lint-ci lint-tests sizes test test-invariant-strict coverage slither
@@ -93,10 +94,26 @@ deploy-local:
 	@bash -c 'source /tmp/vexdc-local.env && forge script script/Deploy.s.sol:Deploy --rpc-url localhost \
 		--private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --broadcast'
 
+## Apothem: deploy mock USDC against canonical WXDC. Prints REWARD_TOKENS exports.
+deploy-apothem-mocks:
+	forge script script/ApothemMocks.s.sol:ApothemMocks --rpc-url xdc_apothem \
+		--account $(DEPLOYER_ACCOUNT) --broadcast --slow --gas-estimate-multiplier 200
+
 ## Apothem testnet (chain 51). Uses a keystore account: `cast wallet import deployer --interactive`.
+## Or: DEPLOYER_PRIVATE_KEY=0x… make deploy-apothem-pk
+## Gas multiplier: Apothem under-estimates CREATE+init (proxy deploys); 200 avoided OOG.
 deploy-apothem:
 	forge script script/Deploy.s.sol:Deploy --rpc-url xdc_apothem --account $(DEPLOYER_ACCOUNT) \
-		--broadcast --verify --slow
+		--broadcast --verify --slow --gas-estimate-multiplier 200
+
+deploy-apothem-pk:
+	forge script script/Deploy.s.sol:Deploy --rpc-url xdc_apothem \
+		--private-key $(DEPLOYER_PRIVATE_KEY) --broadcast --slow --gas-estimate-multiplier 200
+
+## Resume after a partial Apothem deploy (SYSTEM_ACCESS + REVENUE_REGISTRY* in .env).
+deploy-apothem-continue:
+	forge script script/ContinueApothemDeploy.s.sol:ContinueApothemDeploy --rpc-url xdc_apothem \
+		--private-key $(DEPLOYER_PRIVATE_KEY) --broadcast --slow --gas-estimate-multiplier 200
 
 ## XDC mainnet (chain 50). Hardware wallet only.
 deploy-mainnet:

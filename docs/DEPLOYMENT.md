@@ -32,15 +32,29 @@ role is wrong. The same library runs under the test-suite, so `forge test` is a 
 
 ## 2. Rehearse on Apothem (chain 51)
 
+Canonical Apothem WXDC: `0x56408DC41E35d3E8E92A16bc94787438df9387a1`. Deploy mock USDC first:
+
 ```bash
 cast wallet import deployer --interactive    # once
 export DEPLOYER_ACCOUNT=deployer
+# TIMELOCK / GUARDIAN / KEEPER must be a *different* EOA from the deployer
+make deploy-apothem-mocks
+# paste USDC / REWARD_TOKENS into .env
 make deploy-apothem
 ```
+
+Apothem often under-estimates gas for `ERC1967Proxy` CREATE+`initialize`. The Make
+targets pass `--gas-estimate-multiplier 200`. If a run still stops after
+`SystemAccess` + registry impl, set `SYSTEM_ACCESS` / `REVENUE_REGISTRY` /
+`REVENUE_REGISTRY_IMPL` and run `make deploy-apothem-continue`.
+
+Live addresses: [`deployments/51.json`](../deployments/51.json).
 
 Then run through [OPERATIONS.md](OPERATIONS.md) for at least two epoch boundaries: sweep,
 `keepAtMaxLock` in the window, `batchCompound` after it, a claim, an early exit, and a
 `syncForfeiture`. Confirm the numbers reconcile with `docs/ARCHITECTURE.md`.
+
+Keeper + indexer crons live in `apps/indexer` (`POST /api/keeper`, `POST /api/sync`).
 
 ## 3. Mainnet
 

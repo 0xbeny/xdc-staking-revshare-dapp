@@ -23,6 +23,16 @@ node_modules/
 coverage/
 lcov.info
 *.lcov
+.turbo/
+.next/
+dist/
+*.tsbuildinfo
+apps/*/.env
+apps/*/.env.local
+.pnpm-store/
+
+# Vercel
+.vercel/
 
 # OS / editor
 .DS_Store
@@ -31,3 +41,4 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.swp
+.vercel

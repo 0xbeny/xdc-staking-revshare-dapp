@@ -1,0 +1,153 @@
+/* Design tokens — see apps/web/design.md */
+
+:root {
+  --bg-deep: #041012;
+  --bg-base: #07181b;
+  --bg-raised: #0c2428;
+  --bg-inset: #061416;
+  --bg-overlay: rgba(4, 16, 18, 0.72);
+
+  --teal-900: #0a3d42;
+  --teal-700: #0f6b72;
+  --teal-500: #1a9b8e;
+  --teal-300: #3ecfbf;
+  --teal-100: #b8f0e8;
+
+  --ember-700: #b33a08;
+  --ember-500: #e85d04;
+  --ember-400: #f48c06;
+  --ember-200: #ffba6a;
+
+  --ink-bright: #eef7f6;
+  --ink-primary: #c5d9d6;
+  --ink-muted: #7a9a96;
+  --ink-faint: #4a6865;
+
+  --ok: #2db88a;
+  --warn: #e8b84a;
+  --danger: #e04b4b;
+  --border: rgba(62, 207, 191, 0.14);
+  --border-strong: rgba(62, 207, 191, 0.32);
+  --focus-ring: rgba(244, 140, 6, 0.55);
+
+  --chart-tvl: var(--teal-300);
+  --chart-revenue: var(--ember-400);
+  --chart-earnings: var(--teal-500);
+  --chart-grid: rgba(122, 154, 150, 0.18);
+
+  --shell-max: 1120px;
+  --radius: 12px;
+  --font-display: var(--font-syne), "Syne", sans-serif;
+  --font-body: var(--font-ibm-plex), "IBM Plex Sans", sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--ink-primary);
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(ellipse 90% 70% at 8% -10%, rgba(15, 107, 114, 0.45), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, rgba(232, 93, 4, 0.1), transparent 50%),
+    repeating-linear-gradient(
+      -32deg,
+      transparent,
+      transparent 11px,
+      rgba(62, 207, 191, 0.025) 11px,
+      rgba(62, 207, 191, 0.025) 12px
+    );
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--teal-300);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--ember-400);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.shell {
+  width: min(100% - 2.5rem, var(--shell-max));
+  margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 2rem, var(--shell-max));
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes filament {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
