@@ -29,6 +29,7 @@ interface IVotingEscrow {
     function ownerOf(uint256 tokenId) external view returns (address);
     function locked(uint256 tokenId) external view returns (Lock memory);
     function createdEpoch(uint256 tokenId) external view returns (uint256);
+    function firstEligibleEpoch(uint256 tokenId) external view returns (uint256);
     function exitEpoch(uint256 tokenId) external view returns (uint256);
     function exitedWeightByEpoch(uint256 epoch) external view returns (uint256);
     function isOperator(address owner, address operator) external view returns (bool);

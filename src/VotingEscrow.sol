@@ -101,6 +101,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     mapping(uint256 tokenId => Lock) private _locked;
     mapping(uint256 tokenId => uint256) public createdEpoch;
+    /// @notice First epoch whose start-of-epoch snapshot can include this position.
+    /// @dev A position created mid-epoch `n` first participates in `n+1`; one created exactly on
+    ///      a week boundary is already inside epoch `n`'s snapshot, so it participates in `n`.
+    ///      Getting this wrong in either direction breaks conservation: too late strands the
+    ///      position's slice of an epoch it was counted in, too early pays out of a denominator
+    ///      it was absent from.
+    mapping(uint256 tokenId => uint256) public firstEligibleEpoch;
     mapping(uint256 tokenId => uint256) public exitEpoch;
     mapping(uint256 tokenId => bool) public closed;
 
@@ -617,6 +624,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _safeMint(beneficiary, tokenId);
         _ownedTokens[beneficiary].push(tokenId);
         createdEpoch[tokenId] = EpochTime.currentEpoch();
+        firstEligibleEpoch[tokenId] = EpochTime.epochOf(EpochTime.ceilWeek(block.timestamp));
 
         Lock memory newLock =
             Lock({amount: amount.toUint128(), end: unlock.toUint64(), penaltyCapBps: maxPenaltyBps.toUint64()});

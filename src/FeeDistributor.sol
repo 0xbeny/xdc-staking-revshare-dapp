@@ -67,10 +67,20 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     /// @notice Epochs strictly below this are final for the token.
     mapping(address token => uint256) public settledEpoch;
 
+    /// @notice Value that has entered the contract for lockers, ever.
     mapping(address token => uint256) public totalNotified;
+    /// @notice Value that has left the contract to lockers, ever.
     mapping(address token => uint256) public totalClaimed;
-    mapping(address token => uint256) public totalCarriedForward;
-    mapping(address token => uint256) public totalForfeitedFromExits;
+    /// @notice Penalty share received from the escrow's forfeiture bucket, ever. Part of
+    ///         `totalNotified` — it is new value, not an internal move.
+    mapping(address token => uint256) public totalPenaltyReceived;
+    /// @notice Sum of *movements* between epoch pots caused by zero-supply carry-forward. An
+    ///         amount that chains across several empty epochs is counted once per hop, so this
+    ///         is an observability counter and never part of a conservation identity.
+    mapping(address token => uint256) public carryForwardMovements;
+    /// @notice Sum of movements caused by exiting positions forfeiting their in-progress share.
+    ///         Also a movement counter, for the same reason.
+    mapping(address token => uint256) public exitForfeitMovements;
 
     mapping(uint256 epoch => uint256) public epochSupply;
     mapping(uint256 epoch => bool) public epochSupplyCached;
@@ -262,7 +272,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         accounted[token] = balance;
         epochRevenue[token][epoch] += credited;
         totalNotified[token] += credited;
-        totalForfeitedFromExits[token] += credited;
+        totalPenaltyReceived[token] += credited;
         emit ForfeitureSynced(token, credited, epoch);
     }
 
@@ -291,7 +301,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
                 if (pot > 0) {
                     epochRevenue[token][cursor] = 0;
                     epochRevenue[token][cursor + 1] += pot;
-                    totalCarriedForward[token] += pot;
+                    carryForwardMovements[token] += pot;
                     movedForward = pot;
                 }
             } else if (pot > 0) {
@@ -302,7 +312,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
                     movedForward = (pot * exited) / supply;
                     if (movedForward > 0) {
                         epochRevenue[token][cursor + 1] += movedForward;
-                        totalForfeitedFromExits[token] += movedForward;
+                        exitForfeitMovements[token] += movedForward;
                     }
                 }
             }
@@ -480,7 +490,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         if (cursor != 0) {
             return cursor;
         }
-        uint256 first = escrow.createdEpoch(tokenId) + 1;
+        uint256 first = escrow.firstEligibleEpoch(tokenId);
         return first > startEpoch ? first : startEpoch;
     }
 
