@@ -46,6 +46,8 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 The rule of thumb: **anything that can be upgraded never holds principal, and anything that
 holds principal can never be upgraded.**
 
+Locker call sequences for every scenario: [USER_FLOWS.md](USER_FLOWS.md).
+
 ## Time
 
 Everything runs on week-aligned epochs. Unix time 0 was a Thursday, so `timestamp / 1 weeks`
@@ -263,13 +265,16 @@ Modes A/B/B2/B3 require `committedBps ∈ (0, 10_000]`; Mode C may record `0` as
 
 ## Adapters
 
-All adapters share `RevenueAdapterBase`: `(SOURCE, DISTRIBUTOR, DAPP_TREASURY,
+All fund-moving adapters share `RevenueAdapterBase`: `(SOURCE, DISTRIBUTOR, DAPP_TREASURY,
 COMMITTED_BPS, tokens)` are fixed at construction with no setter, no owner and no upgrade
-path. Sweep / commit / attest entry points are `nonReentrant`. Every sweep splits the full
+path. Sweep / commit / attest entry points are `nonReentrant`. Every skim splits the full
 amount in the same transaction, so an adapter never holds a balance between calls. B2 and B3
 additionally leave the dedicated fee Safe at a zero balance — B3 asserts that after Safe
 `exec` (raw `transfer` is not SafeERC20-hardened, so a false-returning token reverts
 `SweepIncomplete` rather than reporting a successful empty skim).
+
+**Integration guides:** [adapters/README.md](adapters/README.md) (one page per mode) and
+[INTEGRATION.md](INTEGRATION.md).
 
 The Attestor (Mode C) is the one adapter that serves many dApps: one immutable record per
 `(dapp, token, sourceEpoch)` via `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`;

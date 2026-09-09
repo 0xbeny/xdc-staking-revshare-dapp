@@ -32,6 +32,8 @@ test/
   unit/  e2e/  fuzz/  invariant/
 docs/
   SPEC.md  ARCHITECTURE.md  DEPLOYMENT.md  OPERATIONS.md  INTEGRATION.md  SECURITY.md
+  USER_FLOWS.md             concrete locker scenarios (deposit → claim → exit)
+  adapters/                 per-mode dApp integration (A / B / B2 / B3 / C)
 ```
 
 ## Quick start
