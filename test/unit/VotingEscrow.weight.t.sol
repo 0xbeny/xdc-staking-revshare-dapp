@@ -155,4 +155,40 @@ contract VotingEscrowWeightTest is Base {
         assertEq(escrow.balanceOfNFT(tokenId), 0);
         assertEq(escrow.totalSupply(), 0);
     }
+
+    /// @dev The pure formula, exercised directly: truncated slope, clamp, expiry, dust.
+    function test_weightAt_pureFormula() public view {
+        uint256 amount = 104 ether;
+        uint256 slope = amount / MAX_LOCK;
+        uint256 end = 1000 * WEEK;
+
+        assertEq(escrow.weightAt(amount, end, end - MAX_LOCK), slope * MAX_LOCK, "full weight at exactly MAX_LOCK");
+        assertEq(escrow.weightAt(amount, end, end - MAX_LOCK - 3 days), slope * MAX_LOCK, "clamped beyond it");
+        assertEq(escrow.weightAt(amount, end, end - 52 weeks), slope * 52 weeks, "linear inside it");
+        assertEq(escrow.weightAt(amount, end, end), 0, "zero at expiry");
+        assertEq(escrow.weightAt(amount, end, end + 1), 0, "zero after expiry");
+        assertEq(escrow.weightAt(0, end, end - 1), 0, "zero amount");
+        assertEq(escrow.weightAt(MAX_LOCK - 1, end, end - 1), 0, "dust below one slope unit");
+    }
+
+    function test_userPointHistory_recordsEveryMutationAndOverwritesWithinABlock() public {
+        uint256 tokenId = _lock(alice, 100 ether, 52 weeks);
+        assertEq(escrow.userPointHistoryLength(tokenId), 1);
+
+        // Same block: the point is overwritten, not appended.
+        vm.startPrank(alice);
+        wxdc.approve(address(escrow), 100 ether);
+        escrow.increaseAmount(tokenId, 50 ether);
+        assertEq(escrow.userPointHistoryLength(tokenId), 1, "same-timestamp mutations overwrite");
+        assertEq(escrow.userPointAt(tokenId, 0).amount, 150 ether);
+
+        // Later block: appended.
+        vm.warp(block.timestamp + 1 days);
+        escrow.increaseAmount(tokenId, 50 ether);
+        vm.stopPrank();
+        assertEq(escrow.userPointHistoryLength(tokenId), 2);
+        assertEq(escrow.userPointAt(tokenId, 1).amount, 200 ether);
+        assertEq(escrow.userPointAt(tokenId, 1).ts, block.timestamp);
+        assertEq(escrow.userPointAt(tokenId, 0).amount, 150 ether, "history is immutable");
+    }
 }

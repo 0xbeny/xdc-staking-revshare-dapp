@@ -37,8 +37,8 @@ fuzz = { runs = 32 }
 invariant = { runs = 8, depth = 16 }
 
 [lint]
-# Policy: `forge lint src/ script/` must report zero findings on the pinned CI toolchain
-# (forge v1.8.1). Tests are linted advisory-only. Excluded rules, with the reason each does not
+# Policy: `forge lint src/ script/` must report zero findings under `make ci` on forge v1.8.1
+# (the version the rule set below was written against). Tests are linted advisory-only. Excluded rules, with the reason each does not
 # fit this codebase rather than because it was inconvenient:
 #  - mixed-case-function            : `balanceOfNFT` / spec-named `create_lock_for` aliases.
 #  - screaming-snake-case-immutable : `token`/`distributor`/`treasury` are part of the read ABI.

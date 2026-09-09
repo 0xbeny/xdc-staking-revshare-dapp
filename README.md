@@ -38,9 +38,9 @@ docs/
 git clone --recursive <repo>
 cp .env.example .env         # fill in RPC + addresses; never commit it
 forge build
-forge test                   # 193 tests: unit · e2e · fuzz · invariant
-make test-invariant-strict   # 512 runs × 96 depth, fail_on_revert
-make coverage
+forge test                   # 197 tests: unit · e2e · fuzz · invariant
+make ci                      # the full local gate: fmt · lint · sizes · tests · strict invariants · coverage · slither
+make slither-install         # one-time: puts slither in ./.venv so `make ci` includes it
 ```
 
 Rehearse the real deployment locally:

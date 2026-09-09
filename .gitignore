@@ -19,6 +19,7 @@ deployments/*.private.json
 
 # Node / tooling
 node_modules/
+.venv/
 coverage/
 lcov.info
 *.lcov

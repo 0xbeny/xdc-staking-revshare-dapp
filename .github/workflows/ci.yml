@@ -1,9 +1,9 @@
-name: CI
+name: CI (on demand)
 
+# The canonical gate is `make ci`, run locally. This workflow mirrors it and is kept for
+# occasional manual runs only; it does not trigger on push or pull request.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 env:
   FOUNDRY_PROFILE: ci

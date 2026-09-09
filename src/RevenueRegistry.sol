@@ -24,8 +24,10 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
     address[] private _allAdapters;
 
     // Reserved storage for future upgrades; intentionally never read.
-    // forge-lint: disable-next-line(mixed-case-variable, unused-state-variables)
+    // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
+    // slither-disable-next-line unused-state
     uint256[40] private __gap;
+    // forge-lint: disable-end(mixed-case-variable, unused-state-variables)
 
     event DistributorSet(address indexed distributor);
     event AdapterRegistered(

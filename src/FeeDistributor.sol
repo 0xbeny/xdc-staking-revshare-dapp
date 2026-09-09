@@ -104,8 +104,10 @@ contract FeeDistributor is
     mapping(uint256 tokenId => bool) public keepAtMaxLock;
 
     // Reserved storage for future upgrades; intentionally never read.
-    // forge-lint: disable-next-line(mixed-case-variable, unused-state-variables)
+    // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
+    // slither-disable-next-line unused-state
     uint256[40] private __gap;
+    // forge-lint: disable-end(mixed-case-variable, unused-state-variables)
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS

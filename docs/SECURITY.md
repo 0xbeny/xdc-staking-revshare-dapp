@@ -46,7 +46,21 @@ Every AccessControl role id lives in [`src/libraries/Roles.sol`](../src/librarie
 | Keeper: epoch guards, window guard, missed window never corrected, compound at expiry degrades to claim | `FeeDistributor.keeper.t.sol` |
 | Zero-supply epochs carry forward, never divide by zero | `test_zeroSupplyEpochCarriesRevenueForward`, `test_settleNeverDividesByZero` |
 
-The invariant suite is run in CI with `fail_on_revert = true`, 256 runs × 64 depth.
+The invariant suite runs under `make ci` with `fail_on_revert = true`, 256 runs × 64 depth.
+
+## Coverage
+
+`make coverage` reports 100% branch coverage on `FeeDistributor`, `RevenueRegistry`,
+`ZapDepositor` and every adapter. `VotingEscrow` reports 57/65 branches; the eight unhit
+branches are deliberately defensive and unreachable through any public path, and are kept
+rather than deleted because each one bounds the blast radius of a bug that the invariant suite
+says does not exist:
+
+| Branch | Why it is unreachable | Why it stays |
+|---|---|---|
+| `bias < 0` / `slope < 0` clamps in `_globalCheckpoint`, `_applyLock`, `totalSupplyAt` (6) | contributions are added and removed with the same truncated slope, so the aggregate never undershoots zero (`invariant_totalSupplyEqualsSumOfPositions`) | a negative aggregate would corrupt every snapshot; clamping fails safe |
+| `unlock - now < MIN_LOCK` after round-up in `createLockFor` | `duration >= MIN_LOCK` is checked first and `ceilWeek` only lengthens | keeps the `effective lock >= MIN_LOCK` invariant local to the function that must uphold it |
+| `from != address(0)` in `_update` | every transfer entry point is overridden to revert before reaching `_update` | a second, independent enforcement of soulbound-ness against a future ERC721 base change |
 
 ## Bugs the test-suite found before launch
 
@@ -91,13 +105,15 @@ These are recorded because each one is a class, not an instance:
 
 ## Static analysis
 
-CI pins **forge v1.8.1** and enforces a zero-findings policy for `forge lint` on `src/` and
-`script/`; tests are linted advisory-only. The rules excluded in `foundry.toml` are listed there
+The gate is local: `make ci` runs formatting, lint, sizes, tests, strict invariants, coverage
+and Slither on the developer's machine (the GitHub workflow mirrors it and runs on demand only).
+The lint policy targets **forge v1.8.1** — `make ci FORGE=<path>` — with zero findings on `src/`
+and `script/`; tests are linted advisory-only. The rules excluded in `foundry.toml` are listed there
 with the reason each does not fit an epoch-based ve design (bounded loops over epochs,
 week-aligned timestamp comparisons, events after `nonReentrant`-guarded calls). Every remaining
 suppression is inline, next to the code, with its justification.
 
-Slither runs in CI (`fail-on: high`, config in `slither.config.json`). Two findings are
+Slither runs as part of `make ci` (`--fail-high`, config in `slither.config.json`). Two findings are
 suppressed inline by design and are worth knowing about:
 
 - `arbitrary-send-erc20` on `PullAdapter.skim` — Mode B2 *is* an allowance-based pull from an

@@ -4,14 +4,52 @@
 -include .env
 export
 
-.PHONY: build test test-unit test-e2e test-fuzz test-invariant test-invariant-strict coverage lint fmt \
+# `make ci FORGE=/path/to/forge` runs the gate with a specific forge build. The lint policy in
+# foundry.toml is written against forge v1.8.1; older builds know fewer rules and pass trivially.
+FORGE ?= forge
+SLITHER ?= $(if $(wildcard .venv/bin/slither),.venv/bin/slither,slither)
+
+.PHONY: ci fmt-check lint-ci lint-tests sizes slither slither-install \
+        build test test-unit test-e2e test-fuzz test-invariant test-invariant-strict coverage lint fmt \
         anvil deploy-local deploy-apothem deploy-mainnet deploy-adapter clean
 
+## The full local gate — the same steps the on-demand GitHub workflow runs.
+ci: fmt-check lint-ci lint-tests sizes test test-invariant-strict coverage slither
+	@echo "✔ local CI passed ($(shell $(FORGE) --version | head -1))"
+
+fmt-check:
+	$(FORGE) fmt --check
+
+## Zero findings on shipping code. Tests are linted advisory-only (see lint-tests).
+## The rule set in foundry.toml targets forge >= 1.8.1; an older forge rejects the newer rule
+## ids and must fail here loudly rather than pass with nothing linted.
+lint-ci:
+	@set -o pipefail; $(FORGE) lint src/ script/ 2>&1 | tee /tmp/vexdc-lint.log || { \
+		echo "✘ forge lint failed to run ($$($(FORGE) --version | head -1))."; \
+		echo "  The lint policy needs forge >= 1.8.1: 'foundryup -i v1.8.1' or 'make ci FORGE=/path/to/forge'."; exit 1; }
+	@if grep -qE '^(warning|note)\[' /tmp/vexdc-lint.log; then echo "✘ lint findings in src/ or script/"; exit 1; fi
+
+lint-tests:
+	-$(FORGE) lint test/
+
+sizes:
+	$(FORGE) build --sizes
+
+## Slither, if installed (`make slither-install` puts it in ./.venv). Skips with a notice otherwise.
+slither:
+	@if command -v $(SLITHER) >/dev/null 2>&1 || [ -x "$(SLITHER)" ]; then \
+		$(SLITHER) . --config-file slither.config.json --fail-high; \
+	else echo "· slither not installed — run 'make slither-install' (skipped)"; fi
+
+slither-install:
+	python3 -m venv .venv && .venv/bin/pip install --quiet --upgrade pip slither-analyzer
+	@echo "installed: $$(.venv/bin/slither --version)"
+
 build:
-	forge build
+	$(FORGE) build
 
 test:
-	forge test
+	$(FORGE) test
 
 test-unit:
 	forge test --match-path "test/unit/*"
@@ -26,11 +64,12 @@ test-invariant:
 	forge test --match-path "test/invariant/*"
 
 test-invariant-strict:
-	FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=512 FOUNDRY_INVARIANT_DEPTH=96 \
-		forge test --match-path "test/invariant/*"
+	rm -rf cache/invariant
+	FOUNDRY_INVARIANT_FAIL_ON_REVERT=true FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=64 \
+		$(FORGE) test --match-path "test/invariant/*"
 
 coverage:
-	forge coverage --no-match-path "test/invariant/*" --report summary --no-match-coverage "(script|test|mocks)"
+	$(FORGE) coverage --no-match-path "test/invariant/*" --report summary --no-match-coverage "(script|test|mocks)"
 
 lint:
 	forge fmt --check

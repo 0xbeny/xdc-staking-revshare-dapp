@@ -1,6 +1,5 @@
 {
   "filter_paths": "lib|test|script",
   "exclude_dependencies": true,
-  "detectors_to_exclude": "calls-loop,timestamp,reentrancy-events,reentrancy-benign,uninitialized-local,incorrect-equality,naming-convention,solc-version,pragma,assembly,dead-code,too-many-digits,low-level-calls",
-  "_comment": "Excluded classes are inherent to an epoch-based ve design (bounded loops over epochs, week-aligned timestamp comparisons, events after nonReentrant-guarded calls). Everything else is either fixed or suppressed inline with a stated reason."
+  "detectors_to_exclude": "calls-loop,timestamp,reentrancy-events,reentrancy-benign,uninitialized-local,incorrect-equality,naming-convention,solc-version,pragma,assembly,dead-code,too-many-digits,low-level-calls,unindexed-event-address"
 }

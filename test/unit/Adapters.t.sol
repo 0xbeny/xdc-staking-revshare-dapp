@@ -142,4 +142,22 @@ contract AdaptersTest is Base {
         vm.expectRevert(RevenueAdapterBase.NothingToSkim.selector);
         puller.skim(address(usdc));
     }
+
+    function test_adapterExposesItsFixedTokenSet() public view {
+        address[] memory supported = splitter.supportedTokens();
+        assertEq(supported.length, 2);
+        assertEq(supported[0], address(wxdc));
+        assertEq(supported[1], address(usdc));
+        assertTrue(splitter.isSupported(address(usdc)));
+        assertFalse(splitter.isSupported(address(0xBEEF)));
+    }
+
+    function test_adapterConstructorDeduplicatesTokens() public {
+        address[] memory dup = new address[](3);
+        dup[0] = address(usdc);
+        dup[1] = address(usdc);
+        dup[2] = address(wxdc);
+        FeeSplitter s = new FeeSplitter(dapp, address(distributor), dappTreasury, 3000, dup);
+        assertEq(s.supportedTokens().length, 2);
+    }
 }
