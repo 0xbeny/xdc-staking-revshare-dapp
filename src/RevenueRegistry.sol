@@ -5,11 +5,14 @@ import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
 import {Roles} from "./libraries/Roles.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title RevenueRegistry
 /// @notice Metadata plane for the revenue standard: whitelisting, terms, mode, version and
 ///         lifetime contribution. It never holds funds and never holds an allowance (§3.2).
 contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgradeable {
+    using SafeCast for uint256;
+
     bytes32 public constant UPGRADER_ROLE = Roles.UPGRADER;
     bytes32 public constant REGISTRY_ADMIN_ROLE = Roles.REGISTRY_ADMIN;
 
@@ -20,7 +23,8 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
     mapping(address dapp => address[]) private _adaptersOfDapp;
     address[] private _allAdapters;
 
-    // forge-lint: disable-next-line(mixed-case-variable)
+    // Reserved storage for future upgrades; intentionally never read.
+    // forge-lint: disable-next-line(mixed-case-variable, unused-state-variables)
     uint256[40] private __gap;
 
     event DistributorSet(address indexed distributor);
@@ -95,7 +99,7 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
             version: version,
             active: true,
             termsHash: termsHash,
-            registeredAt: uint64(block.timestamp)
+            registeredAt: block.timestamp.toUint64()
         });
         _adaptersOfDapp[dapp].push(adapter);
         _allAdapters.push(adapter);

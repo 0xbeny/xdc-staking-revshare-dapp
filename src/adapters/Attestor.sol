@@ -7,6 +7,7 @@ import {Roles} from "../libraries/Roles.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Attestor
 /// @notice Mode C — atomic epoch attestation (§3.2 #6).
@@ -23,6 +24,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///      assigned at receipt and can never be chosen by the reporter (§3.2 #8).
 contract Attestor is AccessControl {
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     struct Record {
         address dapp;
@@ -111,7 +113,7 @@ contract Attestor is AccessControl {
         // forge-lint: disable-next-line(unsafe-typecast)
         net = uint256(signedNet);
 
-        uint64 distributionEpoch = uint64(EpochTime.currentEpoch());
+        uint64 distributionEpoch = EpochTime.currentEpoch().toUint64();
         posted[k] = true;
         _records[k] = Record({
             dapp: dapp,
@@ -122,7 +124,7 @@ contract Attestor is AccessControl {
             adjustment: adjustment,
             net: net,
             metadataHash: metadataHash,
-            postedAt: uint64(block.timestamp)
+            postedAt: block.timestamp.toUint64()
         });
         _keys.push(k);
         lifetimeNet[dapp][token] += net;

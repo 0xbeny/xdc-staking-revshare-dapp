@@ -57,7 +57,7 @@ abstract contract RevenueAdapterBase {
         DAPP_TREASURY = dappTreasury_;
         COMMITTED_BPS = committedBps_;
 
-        for (uint256 i; i < tokens_.length; ++i) {
+        for (uint256 i = 0; i < tokens_.length; ++i) {
             if (tokens_[i] == address(0)) {
                 revert ZeroAddress();
             }

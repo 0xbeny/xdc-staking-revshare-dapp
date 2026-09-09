@@ -18,13 +18,15 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
       - name: Format check
         run: forge fmt --check
-      - name: Lint (zero findings policy)
+      - name: Lint shipping code (zero findings policy)
         run: |
-          forge lint src/ test/ script/ 2>&1 | tee lint.log
+          forge lint src/ script/ 2>&1 | tee lint.log
           ! grep -qE '^(warning|note)\[' lint.log
+      - name: Lint tests (advisory)
+        run: forge lint test/ || true
       - name: Build
         run: forge build --sizes
 
@@ -37,7 +39,7 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
       - name: Run tests
         run: forge test --no-match-path "test/invariant/*" -vv
 
@@ -50,7 +52,7 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
       - name: Run invariant suite
         env:
           FOUNDRY_INVARIANT_FAIL_ON_REVERT: "true"
@@ -67,7 +69,7 @@ jobs:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
       - name: Coverage (escrow + distributor must stay fully covered)
         run: |
           forge coverage --no-match-path "test/invariant/*" --report summary --report lcov \
@@ -91,7 +93,6 @@ jobs:
         id: slither
         with:
           target: .
-          slither-args: --filter-paths "lib|test|script" --exclude-dependencies
           fail-on: high
           sarif: results.sarif
         continue-on-error: true

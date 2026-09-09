@@ -41,6 +41,9 @@ library VeXDCDeployer {
         VeVotesAdapter votes;
     }
 
+    /// @dev Mirrors the escrow's immutable clamps so a bad config fails before any deployment.
+    uint256 internal constant HARD_MAX_BPS = 5000;
+
     error InvalidConfig(string what);
 
     function validate(Config memory c) internal view {
@@ -65,10 +68,10 @@ library VeXDCDeployer {
         if (c.keeper == address(0)) {
             revert InvalidConfig("keeper");
         }
-        if (c.maxPenaltyBps > 5000) {
+        if (c.maxPenaltyBps > HARD_MAX_BPS) {
             revert InvalidConfig("maxPenaltyBps > HARD_MAX_PENALTY_BPS");
         }
-        if (c.penaltySplitBps > 5000) {
+        if (c.penaltySplitBps > HARD_MAX_BPS) {
             revert InvalidConfig("penaltySplitBps > 50%");
         }
         if (c.rewardTokens.length == 0) {
@@ -101,7 +104,7 @@ library VeXDCDeployer {
 
         d.registry.setDistributor(address(d.distributor));
         d.distributor.setEscrow(address(d.escrow));
-        for (uint256 i; i < c.rewardTokens.length; ++i) {
+        for (uint256 i = 0; i < c.rewardTokens.length; ++i) {
             d.distributor.addRewardToken(c.rewardTokens[i]);
         }
 
@@ -132,12 +135,25 @@ library VeXDCDeployer {
         reg.renounceRole(reg.DEFAULT_ADMIN_ROLE(), admin);
     }
 
-    /// @notice Post-deployment assertions. Anything false here means do not go live.
+    /// @notice Post-deployment assertions. Anything non-empty here means do not go live.
     function verify(Deployment memory d, Config memory c, address admin) internal view returns (string memory) {
-        FeeDistributor dist = d.distributor;
-        RevenueRegistry reg = d.registry;
+        string memory failure = _verifyWiring(d, c);
+        if (bytes(failure).length != 0) {
+            return failure;
+        }
+        return _verifyRoles(d, c, admin);
+    }
 
-        if (d.escrow.distributor() != address(dist)) {
+    function _verifyWiring(Deployment memory d, Config memory c) private view returns (string memory) {
+        string memory failure = _verifyEscrowWiring(d, c);
+        if (bytes(failure).length != 0) {
+            return failure;
+        }
+        return _verifyPeripheryWiring(d, c);
+    }
+
+    function _verifyEscrowWiring(Deployment memory d, Config memory c) private view returns (string memory) {
+        if (d.escrow.distributor() != address(d.distributor)) {
             return "escrow.distributor mismatch";
         }
         if (d.escrow.treasury() != c.treasury) {
@@ -149,13 +165,17 @@ library VeXDCDeployer {
         if (d.escrow.token() != c.wxdc) {
             return "escrow.token mismatch";
         }
-        if (address(dist.escrow()) != address(d.escrow)) {
+        return "";
+    }
+
+    function _verifyPeripheryWiring(Deployment memory d, Config memory c) private view returns (string memory) {
+        if (address(d.distributor.escrow()) != address(d.escrow)) {
             return "distributor.escrow mismatch";
         }
-        if (address(dist.registry()) != address(reg)) {
+        if (address(d.distributor.registry()) != address(d.registry)) {
             return "distributor.registry mismatch";
         }
-        if (reg.distributor() != address(dist)) {
+        if (d.registry.distributor() != address(d.distributor)) {
             return "registry.distributor mismatch";
         }
         if (address(d.zap.ESCROW()) != address(d.escrow)) {
@@ -164,6 +184,18 @@ library VeXDCDeployer {
         if (address(d.votes.ESCROW()) != address(d.escrow)) {
             return "votes.escrow mismatch";
         }
+        for (uint256 i = 0; i < c.rewardTokens.length; ++i) {
+            if (!d.distributor.isRewardToken(c.rewardTokens[i])) {
+                return "reward token not registered";
+            }
+        }
+        return "";
+    }
+
+    /// @dev Governance holds every role; the deployer holds none.
+    function _verifyRoles(Deployment memory d, Config memory c, address admin) private view returns (string memory) {
+        FeeDistributor dist = d.distributor;
+        RevenueRegistry reg = d.registry;
 
         if (!dist.hasRole(dist.DEFAULT_ADMIN_ROLE(), c.timelock)) {
             return "timelock lacks distributor admin";
@@ -178,29 +210,12 @@ library VeXDCDeployer {
             return "timelock lacks registry admin";
         }
 
-        if (dist.hasRole(dist.DEFAULT_ADMIN_ROLE(), admin)) {
-            return "deployer still holds distributor admin";
-        }
-        if (dist.hasRole(dist.UPGRADER_ROLE(), admin)) {
-            return "deployer still holds upgrader";
-        }
-        if (dist.hasRole(dist.PAUSER_ROLE(), admin)) {
-            return "deployer still holds pauser";
-        }
-        if (reg.hasRole(reg.DEFAULT_ADMIN_ROLE(), admin)) {
-            return "deployer still holds registry admin";
-        }
-        if (reg.hasRole(reg.UPGRADER_ROLE(), admin)) {
-            return "deployer still holds registry upgrader";
-        }
-        if (reg.hasRole(reg.REGISTRY_ADMIN_ROLE(), admin)) {
-            return "deployer still holds registry role";
-        }
-
-        for (uint256 i; i < c.rewardTokens.length; ++i) {
-            if (!dist.isRewardToken(c.rewardTokens[i])) {
-                return "reward token not registered";
-            }
+        bool deployerHoldsSomething = dist.hasRole(dist.DEFAULT_ADMIN_ROLE(), admin)
+            || dist.hasRole(dist.UPGRADER_ROLE(), admin) || dist.hasRole(dist.PAUSER_ROLE(), admin)
+            || reg.hasRole(reg.DEFAULT_ADMIN_ROLE(), admin) || reg.hasRole(reg.UPGRADER_ROLE(), admin)
+            || reg.hasRole(reg.REGISTRY_ADMIN_ROLE(), admin);
+        if (deployerHoldsSomething) {
+            return "deployer still holds a role";
         }
         return "";
     }

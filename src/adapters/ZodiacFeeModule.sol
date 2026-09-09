@@ -1,15 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IAvatar} from "../interfaces/IAvatar.sol";
 import {RevenueAdapterBase} from "./RevenueAdapterBase.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-/// @notice Minimal Zodiac avatar surface (Gnosis Safe `execTransactionFromModule`).
-interface IAvatar {
-    function execTransactionFromModule(address to, uint256 value, bytes calldata data, uint8 operation)
-        external
-        returns (bool success);
-}
 
 /// @notice Mode B3 — Zodiac module on a *dedicated fee Safe* (§3.2 #7).
 /// @dev B3 never operates on a general treasury Safe. The module's only power over the Safe is

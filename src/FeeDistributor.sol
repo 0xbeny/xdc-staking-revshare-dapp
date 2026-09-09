@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IFeeDistributor} from "./interfaces/IFeeDistributor.sol";
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {EpochTime} from "./libraries/EpochTime.sol";
@@ -34,7 +35,13 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///    share. Settlement moves exactly `pot * exitedWeight / supply` into the *next* epoch's pot
 ///    without ever modifying the exited epoch's denominator, so an exiting position can never
 ///    receive its own forfeiture.
-contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+contract FeeDistributor is
+    IFeeDistributor,
+    AccessControlUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -96,7 +103,8 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     mapping(uint256 tokenId => bool) public autoCompound;
     mapping(uint256 tokenId => bool) public keepAtMaxLock;
 
-    // forge-lint: disable-next-line(mixed-case-variable)
+    // Reserved storage for future upgrades; intentionally never read.
+    // forge-lint: disable-next-line(mixed-case-variable, unused-state-variables)
     uint256[40] private __gap;
 
     /*//////////////////////////////////////////////////////////////
@@ -288,12 +296,12 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
         uint256 cursor = settledEpoch[token];
         uint256 current = EpochTime.currentEpoch();
-        uint256 processed;
+        uint256 processed = 0;
 
         while (cursor < current && processed < maxEpochs) {
             uint256 supply = _supplyFor(cursor);
             uint256 pot = epochRevenue[token][cursor];
-            uint256 movedForward;
+            uint256 movedForward = 0;
 
             if (supply == 0) {
                 // Nobody could ever claim this epoch: carry the whole pot forward.
@@ -363,7 +371,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     {
         address to = _recipient(tokenId);
         amounts = new uint256[](tokens.length);
-        for (uint256 i; i < tokens.length; ++i) {
+        for (uint256 i = 0; i < tokens.length; ++i) {
             (uint256 amount, uint256 left) = _accrue(tokenId, tokens[i]);
             remaining += left;
             amounts[i] = amount;
@@ -455,7 +463,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
             limit = finalEpoch;
         }
 
-        uint256 processed;
+        uint256 processed = 0;
         while (cursor < limit && processed < MAX_EPOCHS_PER_CLAIM) {
             uint256 pot = epochRevenue[token][cursor];
             if (pot > 0) {
@@ -551,7 +559,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
             revert OutsideKeeperWindow();
         }
 
-        for (uint256 i; i < tokenIds.length; ++i) {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
             uint256 tokenId = tokenIds[i];
             if (!keepAtMaxLock[tokenId]) {
                 emit KeeperExtended(tokenId, false);
@@ -575,7 +583,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         if (EpochTime.currentEpoch() != expectedEpoch) {
             revert StaleEpoch();
         }
-        for (uint256 i; i < tokenIds.length; ++i) {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
             if (!autoCompound[tokenIds[i]]) {
                 continue;
             }

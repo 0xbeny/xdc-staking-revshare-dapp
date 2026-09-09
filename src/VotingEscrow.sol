@@ -38,6 +38,9 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 ///
 ///      6. **Positions are never burned.** A withdrawn or exited position keeps its tokenId and
 ///         owner with a zeroed lock, so already-finalized reward claims survive the exit.
+// `IVotingEscrow` re-declares `ownerOf` so peripherals need one import; inheriting both it and
+// ERC721 would force a no-op override of every clashing getter for no safety gain.
+// forge-lint: disable-next-line(missing-inheritance)
 contract VotingEscrow is ERC721, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
@@ -142,6 +145,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint64 ts;
     }
 
+    // slither-disable-next-line uninitialized-state
     mapping(uint256 tokenId => UserPoint[]) private _userPointHistory;
 
     uint256 public epoch;
@@ -247,16 +251,18 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (newValue > HARD_MAX_PENALTY_BPS) {
             revert ParameterOutOfRange();
         }
-        emit MaxPenaltyBpsSet(maxPenaltyBps, newValue);
+        uint256 oldValue = maxPenaltyBps;
         maxPenaltyBps = newValue;
+        emit MaxPenaltyBpsSet(oldValue, newValue);
     }
 
     function setPenaltySplitBps(uint256 newValue) external onlyTimelock {
         if (newValue > HARD_MAX_PENALTY_SPLIT_BPS) {
             revert ParameterOutOfRange();
         }
-        emit PenaltySplitBpsSet(penaltySplitBps, newValue);
+        uint256 oldValue = penaltySplitBps;
         penaltySplitBps = newValue;
+        emit PenaltySplitBpsSet(oldValue, newValue);
     }
 
     /// @notice Contract eligibility. EOAs are never listed; contracts need CUSTODIAN or WRAPPER.
@@ -280,9 +286,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (msg.sender != pendingTimelock) {
             revert NotAuthorized();
         }
-        emit TimelockTransferred(timelock, msg.sender);
+        address previous = timelock;
         timelock = msg.sender;
         pendingTimelock = address(0);
+        emit TimelockTransferred(previous, msg.sender);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -336,8 +343,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         // Deliberate divide-before-multiply: the truncated slope is the canonical unit of
         // weight, so the per-position read and the global aggregate agree to the wei.
-        // forge-lint: disable-next-line(divide-before-multiply)
+        // forge-lint: disable-start(divide-before-multiply)
+        // slither-disable-next-line divide-before-multiply
         return (amount / MAX_LOCK) * effective;
+        // forge-lint: disable-end(divide-before-multiply)
     }
 
     /// @notice `min(unlock - now, MAX_LOCK)` — the single clamped time used by weight and penalty.
@@ -436,6 +445,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         int128 biasDelta;
         int128 slopeDelta;
         if (activation <= block.timestamp) {
+            // `end > block.timestamp` here (early return above) and the gap is at most
+            // MAX_LOCK + WEEK seconds, so slope * gap stays far inside int128.
+            // forge-lint: disable-next-line(unsafe-typecast)
             biasDelta = slope * int128(uint128(uint256(end) - block.timestamp));
             slopeDelta = slope;
         } else {
@@ -787,6 +799,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 eff = remaining > MAX_LOCK ? MAX_LOCK : remaining;
         uint256 cap = lock.penaltyCapBps < maxPenaltyBps ? lock.penaltyCapBps : maxPenaltyBps;
 
+        // Basis points are the spec's unit for the penalty, so the intermediate rounding to
+        // a whole bp is the intended behaviour, not a precision slip.
+        // slither-disable-next-line divide-before-multiply
         q.penaltyBps = (cap * eff) / MAX_LOCK;
         q.penalty = (uint256(lock.amount) * q.penaltyBps) / BPS;
         q.returned = lock.amount - q.penalty;

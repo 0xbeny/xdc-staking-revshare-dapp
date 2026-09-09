@@ -38,7 +38,12 @@ contract PullAdapter is RevenueAdapterBase {
             revert NothingToSkim();
         }
 
+        // Mode B2 by design (spec §3.2): the *immutable* fee Safe granted this *immutable* adapter
+        // an allowance, the destination is this contract, and the split targets are immutable.
+        // forge-lint: disable-start(arbitrary-send-erc20)
+        // slither-disable-next-line arbitrary-send-erc20
         IERC20(token).safeTransferFrom(FEE_SAFE, address(this), balance);
+        // forge-lint: disable-end(arbitrary-send-erc20)
         return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
     }
 }

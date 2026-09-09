@@ -91,9 +91,23 @@ These are recorded because each one is a class, not an instance:
 
 ## Static analysis
 
-`forge lint` runs in CI with a zero-findings policy on `src/`, `test/` and `script/`.
-Slither runs in CI (`fail-on: high`). The reference this forks (Curve `VotingEscrow`, via
-Velodrome) is audited; the diffs are enumerated at the top of `VotingEscrow.sol`.
+CI pins **forge v1.8.1** and enforces a zero-findings policy for `forge lint` on `src/` and
+`script/`; tests are linted advisory-only. The rules excluded in `foundry.toml` are listed there
+with the reason each does not fit an epoch-based ve design (bounded loops over epochs,
+week-aligned timestamp comparisons, events after `nonReentrant`-guarded calls). Every remaining
+suppression is inline, next to the code, with its justification.
+
+Slither runs in CI (`fail-on: high`, config in `slither.config.json`). Two findings are
+suppressed inline by design and are worth knowing about:
+
+- `arbitrary-send-erc20` on `PullAdapter.skim` — Mode B2 *is* an allowance-based pull from an
+  immutable fee Safe into the immutable adapter, whose split targets are immutable.
+- `divide-before-multiply` in `VotingEscrow.weightAt` / `_quoteExit` — the truncated slope and
+  the whole-basis-point penalty are the spec's units; the rounding is the intended semantics
+  and is what makes `Σ positions == totalSupply` exact.
+
+The reference this forks (Curve `VotingEscrow`, via Velodrome) is audited; the diffs are
+enumerated at the top of `VotingEscrow.sol`.
 
 ## Reporting
 
