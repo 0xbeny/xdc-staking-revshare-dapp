@@ -4,13 +4,14 @@ pragma solidity 0.8.28;
 import {IFeeDistributor} from "../interfaces/IFeeDistributor.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 
 /// @title RevenueAdapterBase
 /// @notice Shared skeleton for every revenue adapter. Adapters are immutable: their
 ///         `(source, tokens, committedBps, distributor, dappTreasury)` tuple is fixed at
 ///         construction and there is no setter, no owner and no upgrade path. Changing a
 ///         commitment means deploying a new adapter and re-registering it (§3.2).
-abstract contract RevenueAdapterBase {
+abstract contract RevenueAdapterBase is Context {
     using SafeERC20 for IERC20;
 
     uint256 internal constant BPS = 10_000;

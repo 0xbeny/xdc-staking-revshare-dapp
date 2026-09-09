@@ -135,7 +135,7 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
     }
 
     function recordContribution(address adapter, address token, uint256 amount) external {
-        if (msg.sender != distributor) {
+        if (_msgSender() != distributor) {
             revert NotDistributor();
         }
         lifetimeContribution[adapter][token] += amount;

@@ -130,7 +130,7 @@ contract Attestor is AccessControl {
         lifetimeNet[dapp][token] += net;
 
         if (net > 0) {
-            IERC20(token).safeTransferFrom(msg.sender, address(this), net);
+            IERC20(token).safeTransferFrom(_msgSender(), address(this), net);
             IERC20(token).forceApprove(DISTRIBUTOR, net);
             IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, net);
         }

@@ -235,7 +235,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyTimelock() {
-        if (msg.sender != timelock) {
+        if (_msgSender() != timelock) {
             revert NotTimelock();
         }
         _;
@@ -283,13 +283,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     function acceptTimelock() external {
-        if (msg.sender != pendingTimelock) {
+        if (_msgSender() != pendingTimelock) {
             revert NotAuthorized();
         }
         address previous = timelock;
-        timelock = msg.sender;
+        timelock = _msgSender();
         pendingTimelock = address(0);
-        emit TimelockTransferred(previous, msg.sender);
+        emit TimelockTransferred(previous, _msgSender());
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -318,8 +318,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (operator == address(0)) {
             revert ZeroAddress();
         }
-        _operators[msg.sender][operator] = approved;
-        emit OperatorSet(msg.sender, operator, approved);
+        _operators[_msgSender()][operator] = approved;
+        emit OperatorSet(_msgSender(), operator, approved);
     }
 
     function isOperator(address owner, address operator) public view returns (bool) {
@@ -614,10 +614,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     function createLock(uint256 amount, uint256 duration) external returns (uint256) {
-        return createLockFor(msg.sender, amount, duration);
+        return createLockFor(_msgSender(), amount, duration);
     }
 
-    /// @notice Creates a soulbound position for `beneficiary`, funded by `msg.sender`.
+    /// @notice Creates a soulbound position for `beneficiary`, funded by `_msgSender()`.
     /// @dev Eligibility is checked against the beneficiary, never the funder (spec §3.1).
     function createLockFor(address beneficiary, uint256 amount, uint256 duration)
         public
@@ -654,9 +654,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _rewriteLock(tokenId, Lock({amount: 0, end: 0, penaltyCapBps: 0}), newLock);
 
         totalLocked += amount;
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
 
-        emit Deposit(tokenId, msg.sender, amount, unlock);
+        emit Deposit(tokenId, _msgSender(), amount, unlock);
     }
 
     /// @notice Adds principal to an existing position and re-weights its grandfathered penalty cap.
@@ -680,19 +680,19 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _rewriteLock(tokenId, oldLock, newLock);
 
         totalLocked += amount;
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
 
         if (newCap != oldLock.penaltyCapBps) {
             emit PenaltyCapUpdated(tokenId, oldLock.penaltyCapBps, newCap);
         }
-        emit Deposit(tokenId, msg.sender, amount, oldLock.end);
+        emit Deposit(tokenId, _msgSender(), amount, oldLock.end);
     }
 
     /// @notice Extends a lock. Never changes the position's penalty cap (spec §3.4).
     /// @param newUnlock Absolute timestamp; rounded UP to the next week boundary.
     function increaseUnlockTime(uint256 tokenId, uint256 newUnlock) public nonReentrant {
         (address owner, Lock memory oldLock) = _openLockOf(tokenId);
-        if (msg.sender != owner && !_operators[owner][msg.sender]) {
+        if (_msgSender() != owner && !_operators[owner][_msgSender()]) {
             revert NotAuthorized();
         }
         if (oldLock.end <= block.timestamp) {
@@ -726,7 +726,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Full principal after expiry. Unconditional under any periphery state.
     function withdraw(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
-        if (msg.sender != owner) {
+        if (_msgSender() != owner) {
             revert NotAuthorized();
         }
         if (lock.end > block.timestamp) {
@@ -746,7 +746,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     ///         parameters or logic, so it cannot be bricked by any other contract (spec §2).
     function emergencyExit(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
-        if (msg.sender != owner) {
+        if (_msgSender() != owner) {
             revert NotAuthorized();
         }
         if (lock.end <= block.timestamp) {

@@ -227,7 +227,7 @@ contract FeeDistributor is
 
     /// @notice Called by a registered, active adapter. Attribution is the *receipt* epoch.
     function notifyRevenue(address token, uint256 amount) external nonReentrant whenNotPaused {
-        if (!registry.isActiveAdapter(msg.sender)) {
+        if (!registry.isActiveAdapter(_msgSender())) {
             revert NotAnActiveAdapter();
         }
         if (!isRewardToken[token]) {
@@ -245,7 +245,7 @@ contract FeeDistributor is
         _syncForfeiture(token);
 
         uint256 before = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
         uint256 received = IERC20(token).balanceOf(address(this)) - before;
 
         uint256 epoch = EpochTime.currentEpoch();
@@ -253,8 +253,8 @@ contract FeeDistributor is
         epochRevenue[token][epoch] += received;
         totalNotified[token] += received;
 
-        registry.recordContribution(msg.sender, token, received);
-        emit RevenueNotified(token, msg.sender, received, epoch);
+        registry.recordContribution(_msgSender(), token, received);
+        emit RevenueNotified(token, _msgSender(), received, epoch);
     }
 
     /// @notice Attributes any unaccounted balance (escrow penalties, donations) to `currentEpoch + 1`.
@@ -388,7 +388,7 @@ contract FeeDistributor is
     /// @dev Never extends duration and never changes the penalty cap beyond the weighted
     ///      `increase_amount` rule. Degrades to a plain claim once the lock is closed or expired.
     function claimAndLock(uint256 tokenId) public nonReentrant whenNotPaused returns (uint256) {
-        if (!_mayCompound(tokenId, msg.sender)) {
+        if (!_mayCompound(tokenId, _msgSender())) {
             revert NotAuthorized();
         }
         return _compound(tokenId);
@@ -518,7 +518,7 @@ contract FeeDistributor is
     }
 
     function _requirePositionOwner(uint256 tokenId) internal view {
-        if (msg.sender != escrow.ownerOf(tokenId)) {
+        if (_msgSender() != escrow.ownerOf(tokenId)) {
             revert NotPositionOwner();
         }
     }
