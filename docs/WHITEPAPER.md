@@ -266,7 +266,47 @@ Two design details keep this matrix honest under adversarial conditions:
 - The exiter can never receive any part of their own forfeiture, so there is no self-dealing
   path through the compensation mechanism.
 
-### 6.3 The dApp's commitment game
+### 6.3 The ve(3,3) matrix
+
+The "(3,3)" meme popularized by OlympusDAO — and carried into the ve world by Solidly-style
+ve(3,3) designs — frames staking as a coordination game: everyone is best off if everyone
+stakes, but each player is tempted to defect. Writing veXDC in the same notation shows where
+this design departs from its ancestors. Two capital holders each choose one of three
+strategies; payoffs are ordinal (row player first, higher is better):
+
+| You ▼ / Other ► | **Max-lock & maintain** | **Hold unlocked** | **Lock, then exit early** |
+|---|---|---|---|
+| **Max-lock & maintain** | **(3, 3)** | (2, 0) | **(4, −2)** |
+| **Hold unlocked** | (0, 2) | (0, 0) | (0, −2) |
+| **Lock, then exit early** | (−2, 4) | (−2, 0) | (−2, −2) |
+
+Reading the cells:
+
+- **(3, 3) — both max-lock.** Both earn full revenue share; supply is committed; dApps see a
+  deep, long-horizon stake base worth committing revenue to. The cooperative optimum, as in
+  every (3,3) system.
+- **(2, 0) / (0, 2) — one locks, one holds.** The locker earns the yield (slightly more than
+  baseline: fewer competing weights); the holder earns nothing but loses nothing. Holding is
+  not punished — it is simply unpaid.
+- **(4, −2) / (−2, 4) — one locks, one exits early.** The departure from Olympus. There,
+  a defector *extracts* value from stakers and the matrix decays toward (−3, −3). Here the
+  exiter pays a penalty **into the lockers' pool** and forfeits the epoch in progress —
+  defection is the locker's *best* cell, not their worst.
+- **(−2, −2) — both exit early.** Both pay penalties known since lock time. Even mutual
+  defection is bounded: it cannot cascade below the immutable penalty formula, and no third
+  party is dragged down.
+
+The structural difference from classic (3,3): in Olympus-style games, cooperation is an
+equilibrium only while everyone *believes* others will cooperate — defection pays the
+defector, so the matrix is fragile to fear. In veXDC, **max-lock is a strictly dominant
+strategy** for any holder with a real time horizon: whatever the other player does, locking
+is the best response (3 > 0 > −2; 2 > 0; 4 > 0 > −2). Defection costs only the defector and
+compensates the cooperators, so the (3, 3) cell is not a hopeful social contract — it is
+where self-interest lands without coordination, communication, or trust. And because there
+is no emissions token, the "3" is denominated in transferred cash flow rather than reflexive
+supply expansion: the payoff exists whether or not anyone believes in it.
+
+### 6.4 The dApp's commitment game
 
 A dApp choosing whether to commit revenue plays against the locker community's willingness
 to lock:
@@ -283,7 +323,7 @@ lockers can verify, not merely trust, that the yield source is contractual. Symm
 the protocol cannot retroactively tax dApps — the committed share is fixed in the adapter
 the dApp itself deployed.
 
-### 6.4 Time-consistency: why the rules can't defect
+### 6.5 Time-consistency: why the rules can't defect
 
 Every game above assumes the rules hold. In most protocols that assumption is itself a game
 against governance. Here, the moves governance could use to defect are removed rather than
