@@ -2,18 +2,19 @@
 pragma solidity 0.8.28;
 
 import {IFeeDistributor} from "../interfaces/IFeeDistributor.sol";
+import {Constants} from "../libraries/Constants.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title RevenueAdapterBase
 /// @notice Shared skeleton for every revenue adapter. Adapters are immutable: their
 ///         `(source, tokens, committedBps, distributor, dappTreasury)` tuple is fixed at
 ///         construction and there is no setter, no owner and no upgrade path. Changing a
 ///         commitment means deploying a new adapter and re-registering it (§3.2).
-abstract contract RevenueAdapterBase {
+abstract contract RevenueAdapterBase is Context, ReentrancyGuard {
     using SafeERC20 for IERC20;
-
-    uint256 internal constant BPS = 10_000;
 
     /// @notice The dApp whose revenue this adapter commits.
     address public immutable SOURCE;
@@ -45,7 +46,7 @@ abstract contract RevenueAdapterBase {
         if (source_ == address(0) || distributor_ == address(0) || dappTreasury_ == address(0)) {
             revert ZeroAddress();
         }
-        if (committedBps_ == 0 || committedBps_ > BPS) {
+        if (committedBps_ == 0 || committedBps_ > Constants.BPS) {
             revert InvalidBps();
         }
         if (tokens_.length == 0) {
@@ -57,7 +58,7 @@ abstract contract RevenueAdapterBase {
         DAPP_TREASURY = dappTreasury_;
         COMMITTED_BPS = committedBps_;
 
-        for (uint256 i; i < tokens_.length; ++i) {
+        for (uint256 i = 0; i < tokens_.length; ++i) {
             if (tokens_[i] == address(0)) {
                 revert ZeroAddress();
             }
@@ -87,7 +88,7 @@ abstract contract RevenueAdapterBase {
     ///      distributor. The remainder always leaves in the same transaction, so an adapter
     ///      never accumulates a balance between skims.
     function _splitAndForward(address token, uint256 total) internal returns (uint256 committed, uint256 remainder) {
-        committed = (total * COMMITTED_BPS) / BPS;
+        committed = (total * COMMITTED_BPS) / Constants.BPS;
         remainder = total - committed;
 
         if (committed > 0) {

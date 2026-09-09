@@ -1,0 +1,42 @@
+.page {
+  padding: 2.5rem 0 5rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-width: 0;
+}
+
+.sectionTitle {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink-bright);
+}
+
+.sectionLead {
+  margin: -0.35rem 0 1rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .page {
+    padding: 1.75rem 0 4rem;
+  }
+}

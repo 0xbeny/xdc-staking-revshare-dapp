@@ -1,0 +1,35 @@
+.panel {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  min-height: 180px;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.swatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+  background: var(--chart-earnings);
+}
+
+.chart {
+  width: 100%;
+  min-height: 220px;
+}
+
+.empty {
+  margin: 2rem 0;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}

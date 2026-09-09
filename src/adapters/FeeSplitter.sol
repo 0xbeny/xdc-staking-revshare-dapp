@@ -17,7 +17,7 @@ contract FeeSplitter is RevenueAdapterBase {
     ) RevenueAdapterBase(source_, distributor_, dappTreasury_, committedBps_, tokens_) {}
 
     /// @notice Permissionless. Sweeps the full balance: committed → distributor, rest → dApp.
-    function skim(address token) external returns (uint256 committed, uint256 remainder) {
+    function skim(address token) external nonReentrant returns (uint256 committed, uint256 remainder) {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance == 0) {

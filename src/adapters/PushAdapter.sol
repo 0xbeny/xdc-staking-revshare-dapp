@@ -25,8 +25,8 @@ contract PushAdapter is RevenueAdapterBase {
 
     /// @dev Restricted to the registered source so a third party cannot inflate a dApp's
     ///      lifetime contribution record.
-    function commitRevenue(address token, uint256 amount) external {
-        if (msg.sender != SOURCE) {
+    function commitRevenue(address token, uint256 amount) external nonReentrant {
+        if (_msgSender() != SOURCE) {
             revert NotSource();
         }
         _requireSupported(token);
@@ -34,7 +34,7 @@ contract PushAdapter is RevenueAdapterBase {
             revert NothingToSkim();
         }
 
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
         uint256 balance = IERC20(token).balanceOf(address(this));
 
         IERC20(token).forceApprove(DISTRIBUTOR, balance);

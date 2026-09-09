@@ -12,24 +12,14 @@ Implements [`veXDC Staking — v1 Architecture Specification`, draft v0.5](docs/
 ## Layout
 
 ```
-src/
-  VotingEscrow.sol            immutable · soulbound veNFT, weight, penalty rules + params
-  FeeDistributor.sol          UUPS      · weekly epochs, bounded claims, forfeiture, carry-forward
-  RevenueRegistry.sol         UUPS      · adapter whitelist + terms (metadata only, no custody)
-  ZapDepositor.sol            immutable · native XDC → lock in one tx
-  adapters/                   immutable · PushAdapter (A) · FeeSplitter (B) · PullAdapter (B2)
-                                          ZodiacFeeModule (B3) · Attestor (C)
-  governance/VeVotesAdapter   immutable · read-only IVotes over ve weight
-  libraries/EpochTime.sol               · week-aligned epoch arithmetic
-script/
-  VeXDCDeployer.sol           the wiring, shared by the deploy script and the test harness
-  Deploy.s.sol                full system deploy + governance hand-over + self-verification
-  DeployAdapter.s.sol         one adapter per run; prints the timelock's registration calldata
-  LocalMocks.s.sol            anvil rehearsal
-test/
-  unit/  e2e/  fuzz/  invariant/
-docs/
-  SPEC.md  ARCHITECTURE.md  DEPLOYMENT.md  OPERATIONS.md  INTEGRATION.md  SECURITY.md
+src/                          Solidity core + adapters (Foundry)
+script/                       Deploy · ContinueApothem · adapters · mocks
+apps/web                      Next.js dApp (Vercel) — design: apps/web/design.md
+apps/indexer                  Neon + viem indexer API + keeper cron (Vercel)
+packages/contracts            Shared ABIs + TypeScript deployments
+deployments/51.json           Live Apothem addresses
+test/                         unit · e2e · fuzz · invariant
+docs/                         SPEC · ARCHITECTURE · DEPLOYMENT · INDEXER · FRONTEND · …
 ```
 
 ## Quick start
@@ -38,10 +28,22 @@ docs/
 git clone --recursive <repo>
 cp .env.example .env         # fill in RPC + addresses; never commit it
 forge build
-forge test                   # 193 tests: unit · e2e · fuzz · invariant
-make test-invariant-strict   # 512 runs × 96 depth, fail_on_revert
-make coverage
+forge test                   # 197 tests: unit · e2e · fuzz · invariant
+make ci                      # the full local gate
+make slither-install         # one-time: puts slither in ./.venv so `make ci` includes it
 ```
+
+Apps (indexer + frontend):
+
+```bash
+pnpm install
+pnpm prepare:contracts
+pnpm --filter @vexdc/contracts build
+pnpm --filter @vexdc/indexer dev   # http://localhost:3001
+pnpm --filter @vexdc/web dev       # http://localhost:3000
+```
+
+See [docs/INDEXER.md](docs/INDEXER.md) and [docs/FRONTEND.md](docs/FRONTEND.md).
 
 Rehearse the real deployment locally:
 
@@ -71,9 +73,43 @@ make deploy-local            # terminal 2
 
 Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Deploying to XDC mainnet
+## Deploying to XDC Apothem / mainnet
 
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The script refuses EOA governance on chain 50,
+Apothem (chain 51) is live — see [`deployments/51.json`](deployments/51.json).
+
+```bash
+# 1) mock USDC (canonical WXDC already on Apothem)
+make deploy-apothem-mocks   # or forge script … --private-key $DEPLOYER_PRIVATE_KEY
+
+# 2) core system (use --gas-estimate-multiplier 200 on Apothem)
+make deploy-apothem-pk
+
+# If a CREATE proxy OOGs mid-script, set SYSTEM_ACCESS / REVENUE_REGISTRY* and:
+make deploy-apothem-continue
+```
+
+Use a **separate** EOA for `TIMELOCK` / `GUARDIAN` / `KEEPER` from the deployer — handover
+renounces the deployer, and `verify()` rejects leftover deployer roles.
+
+After deploy: register adapters via the timelock, then run [OPERATIONS.md](docs/OPERATIONS.md)
+for ≥2 epoch boundaries (skim, keepAtMaxLock, batchCompound, claim, early exit, syncForfeiture).
+
+### Vercel
+
+| App | Production URL |
+|---|---|
+| Web | https://ve.xdcai.tech |
+| Indexer | https://api.ve.xdcai.tech |
+
+```bash
+# From repo root (projects already linked under 0xbenys-projects)
+vercel link --yes --scope 0xbenys-projects --project vexdc-web && vercel deploy --prod --yes --scope 0xbenys-projects
+vercel link --yes --scope 0xbenys-projects --project vexdc-indexer && vercel deploy --prod --yes --scope 0xbenys-projects
+```
+
+Indexer needs `DATABASE_URL` (Neon) + optional `KEEPER_PRIVATE_KEY` in the Vercel project env. Hobby plan: crons are daily only.
+
+Mainnet: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). The script refuses EOA governance on chain 50,
 verifies its own wiring, and ends with the deployer holding no role anywhere.
 
 ## Security

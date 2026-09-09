@@ -7,6 +7,7 @@ import {Test} from "forge-std/Test.sol";
 import {VeXDCDeployer} from "../script/VeXDCDeployer.sol";
 import {FeeDistributor} from "../src/FeeDistributor.sol";
 import {RevenueRegistry} from "../src/RevenueRegistry.sol";
+import {SystemAccess} from "../src/SystemAccess.sol";
 import {VotingEscrow} from "../src/VotingEscrow.sol";
 import {ZapDepositor} from "../src/ZapDepositor.sol";
 import {Attestor} from "../src/adapters/Attestor.sol";
@@ -16,6 +17,7 @@ import {PushAdapter} from "../src/adapters/PushAdapter.sol";
 import {ZodiacFeeModule} from "../src/adapters/ZodiacFeeModule.sol";
 import {VeVotesAdapter} from "../src/governance/VeVotesAdapter.sol";
 import {IRevenueRegistry} from "../src/interfaces/IRevenueRegistry.sol";
+import {Roles} from "../src/libraries/Roles.sol";
 
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockSafe} from "./mocks/MockSafe.sol";
@@ -49,6 +51,7 @@ abstract contract Base is Test {
     VotingEscrow internal escrow;
     FeeDistributor internal distributor;
     RevenueRegistry internal registry;
+    SystemAccess internal access;
     ZapDepositor internal zap;
     VeVotesAdapter internal votes;
 
@@ -89,9 +92,15 @@ abstract contract Base is Test {
 
         registry = d.registry;
         distributor = d.distributor;
+        access = d.access;
         escrow = d.escrow;
         zap = d.zap;
         votes = d.votes;
+
+        // Suite defaults to zero cooldown so existing exit calls stay one-block; dedicated
+        // cooldown tests re-enable the 24h production default.
+        vm.prank(timelock);
+        escrow.setWithdrawalCooldown(0);
 
         _deployAdapters();
         _fund();
@@ -109,13 +118,14 @@ abstract contract Base is Test {
         pusher = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, tokens);
         puller = new PullAdapter(dapp, address(distributor), dappTreasury, 2500, tokens, address(feeSafe));
         zodiac = new ZodiacFeeModule(dapp, address(distributor), dappTreasury, 2500, tokens, address(feeSafeB3));
-        attestor = new Attestor(address(distributor), timelock, reporter);
+        attestor = new Attestor(address(distributor), address(access));
 
         feeSafe.approveToken(address(wxdc), address(puller), type(uint256).max);
         feeSafe.approveToken(address(usdc), address(puller), type(uint256).max);
         feeSafeB3.enableModule(address(zodiac));
 
         vm.startPrank(timelock);
+        access.grantRole(address(attestor), Roles.REPORTER, reporter);
         registry.registerAdapter(address(splitter), dapp, IRevenueRegistry.Mode.SPLITTER, 3000, 1, "terms-b");
         registry.registerAdapter(address(pusher), dapp, IRevenueRegistry.Mode.PUSH, 10_000, 1, "terms-a");
         registry.registerAdapter(address(puller), dapp, IRevenueRegistry.Mode.PULL_SAFE, 2500, 1, "terms-b2");
@@ -141,8 +151,22 @@ abstract contract Base is Test {
 
     function _lock(address who, uint256 amount, uint256 duration) internal returns (uint256 tokenId) {
         vm.startPrank(who);
-        wxdc.approve(address(escrow), amount);
-        tokenId = escrow.createLock(amount, duration);
+        wxdc.approve(address(zap), amount);
+        tokenId = zap.lockWXDC(amount, duration);
+        vm.stopPrank();
+    }
+
+    function _completeWithdraw(address who, uint256 tokenId) internal {
+        vm.startPrank(who);
+        escrow.requestWithdraw(tokenId);
+        escrow.withdraw(tokenId);
+        vm.stopPrank();
+    }
+
+    function _completeEmergencyExit(address who, uint256 tokenId) internal {
+        vm.startPrank(who);
+        escrow.requestEmergencyExit(tokenId);
+        escrow.emergencyExit(tokenId);
         vm.stopPrank();
     }
 

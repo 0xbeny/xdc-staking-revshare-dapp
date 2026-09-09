@@ -26,6 +26,8 @@ contract Deploy is Script {
 
         vm.startBroadcast();
         // The wiring admin must be the account that actually signs the transactions.
+        // Only the sender matters here; the caller mode and tx.origin are irrelevant.
+        // forge-lint: disable-next-line(unused-return)
         (, address deployer,) = vm.readCallers();
         VeXDCDeployer.Deployment memory d = VeXDCDeployer.deploy(config, deployer);
         VeXDCDeployer.handOverToGovernance(d, config, deployer);
@@ -70,6 +72,7 @@ contract Deploy is Script {
 
     function _report(VeXDCDeployer.Deployment memory d, VeXDCDeployer.Config memory config) internal pure {
         console2.log("=== veXDC v1 deployed ===");
+        console2.log("SystemAccess          ", address(d.access));
         console2.log("VotingEscrow          ", address(d.escrow));
         console2.log("FeeDistributor (proxy)", address(d.distributor));
         console2.log("FeeDistributor  (impl)", d.distributorImpl);
@@ -84,10 +87,13 @@ contract Deploy is Script {
         console2.log("keeper                ", config.keeper);
     }
 
+    // `vm.serialize*` returns the running JSON each time; only the final value is needed.
+    // forge-lint: disable-start(unused-return)
     function _write(VeXDCDeployer.Deployment memory d, VeXDCDeployer.Config memory config) internal {
         string memory key = "deployment";
         vm.serializeUint(key, "chainId", block.chainid);
         vm.serializeUint(key, "deployedAt", block.timestamp);
+        vm.serializeAddress(key, "systemAccess", address(d.access));
         vm.serializeAddress(key, "votingEscrow", address(d.escrow));
         vm.serializeAddress(key, "feeDistributor", address(d.distributor));
         vm.serializeAddress(key, "feeDistributorImpl", d.distributorImpl);
@@ -101,6 +107,8 @@ contract Deploy is Script {
         vm.serializeAddress(key, "treasury", config.treasury);
         string memory json = vm.serializeAddress(key, "keeper", config.keeper);
 
+        vm.createDir("./deployments", true);
         vm.writeJson(json, string.concat("./deployments/", vm.toString(block.chainid), ".json"));
     }
+    // forge-lint: disable-end(unused-return)
 }

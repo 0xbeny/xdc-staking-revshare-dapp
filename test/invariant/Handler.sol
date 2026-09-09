@@ -8,6 +8,7 @@ import {StdUtils} from "forge-std/StdUtils.sol";
 
 import {FeeDistributor} from "../../src/FeeDistributor.sol";
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
+import {ZapDepositor} from "../../src/ZapDepositor.sol";
 import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockWXDC} from "../mocks/MockWXDC.sol";
@@ -19,6 +20,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
     uint256 internal constant MAX_LOCK = 104 weeks;
 
     VotingEscrow public immutable ESCROW;
+    ZapDepositor public immutable ZAP;
     FeeDistributor public immutable DISTRIBUTOR;
     PushAdapter public immutable PUSHER;
     MockWXDC public immutable WXDC;
@@ -38,6 +40,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
     constructor(
         VotingEscrow escrow_,
+        ZapDepositor zap_,
         FeeDistributor distributor_,
         PushAdapter pusher_,
         MockWXDC wxdc_,
@@ -47,6 +50,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         address[3] memory actors_
     ) {
         ESCROW = escrow_;
+        ZAP = zap_;
         DISTRIBUTOR = distributor_;
         PUSHER = pusher_;
         WXDC = wxdc_;
@@ -82,8 +86,8 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
         WXDC.mint(actor, value);
         vm.startPrank(actor);
-        WXDC.approve(address(ESCROW), value);
-        uint256 tokenId = ESCROW.createLock(value, duration);
+        WXDC.approve(address(ZAP), value);
+        uint256 tokenId = ZAP.lockWXDC(value, duration);
         vm.stopPrank();
 
         tokenIds.push(tokenId);

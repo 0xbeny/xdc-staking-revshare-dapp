@@ -29,7 +29,7 @@ contract UserJourneyTest is Base {
         // 1. Lock: 100k XDC via the zap, 52 weeks — deliberately mid-epoch.
         vm.warp(block.timestamp + 1 days);
         vm.prank(alice);
-        uint256 position = zap.zapCreateLock{value: 100_000 ether}(alice, 52 weeks);
+        uint256 position = zap.zapCreateLock{value: 100_000 ether}(52 weeks);
 
         assertEq(escrow.locked(position).end % WEEK, 0, "rounds up to the next Thursday boundary");
         assertGe(escrow.locked(position).end - block.timestamp, 52 weeks);

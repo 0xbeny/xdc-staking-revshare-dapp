@@ -7,6 +7,7 @@ import {PullAdapter} from "../src/adapters/PullAdapter.sol";
 import {PushAdapter} from "../src/adapters/PushAdapter.sol";
 import {ZodiacFeeModule} from "../src/adapters/ZodiacFeeModule.sol";
 import {IRevenueRegistry} from "../src/interfaces/IRevenueRegistry.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {Script, console2} from "forge-std/Script.sol";
 
 /// @notice Deploys one immutable revenue adapter for a dApp.
@@ -16,8 +17,8 @@ import {Script, console2} from "forge-std/Script.sol";
 /// calldata for the timelock to execute.
 ///
 /// Required environment: DISTRIBUTOR, ADAPTER_MODE (A|B|B2|B3|C), DAPP, DAPP_TREASURY,
-/// COMMITTED_BPS, REWARD_TOKENS. Modes B2/B3 also require FEE_SAFE. Mode C requires TIMELOCK
-/// and REPORTER instead of the dApp fields.
+/// COMMITTED_BPS, REWARD_TOKENS. Modes B2/B3 also require FEE_SAFE. Mode C requires
+/// SYSTEM_ACCESS and REPORTER (then a timelock `grantRole` on SystemAccess).
 contract DeployAdapter is Script {
     error UnknownMode(string mode);
     error FeeSafeRequired();
@@ -37,7 +38,7 @@ contract DeployAdapter is Script {
                     vm.envAddress("DAPP"),
                     distributor,
                     vm.envAddress("DAPP_TREASURY"),
-                    uint16(vm.envUint("COMMITTED_BPS")),
+                    SafeCast.toUint16(vm.envUint("COMMITTED_BPS")),
                     tokens
                 )
             );
@@ -48,7 +49,7 @@ contract DeployAdapter is Script {
                     vm.envAddress("DAPP"),
                     distributor,
                     vm.envAddress("DAPP_TREASURY"),
-                    uint16(vm.envUint("COMMITTED_BPS")),
+                    SafeCast.toUint16(vm.envUint("COMMITTED_BPS")),
                     tokens
                 )
             );
@@ -59,7 +60,7 @@ contract DeployAdapter is Script {
                     vm.envAddress("DAPP"),
                     distributor,
                     vm.envAddress("DAPP_TREASURY"),
-                    uint16(vm.envUint("COMMITTED_BPS")),
+                    SafeCast.toUint16(vm.envUint("COMMITTED_BPS")),
                     tokens,
                     _feeSafe()
                 )
@@ -71,14 +72,14 @@ contract DeployAdapter is Script {
                     vm.envAddress("DAPP"),
                     distributor,
                     vm.envAddress("DAPP_TREASURY"),
-                    uint16(vm.envUint("COMMITTED_BPS")),
+                    SafeCast.toUint16(vm.envUint("COMMITTED_BPS")),
                     tokens,
                     _feeSafe()
                 )
             );
             registryMode = IRevenueRegistry.Mode.ZODIAC_SAFE;
         } else if (_eq(mode, "C")) {
-            adapter = address(new Attestor(distributor, vm.envAddress("TIMELOCK"), vm.envAddress("REPORTER")));
+            adapter = address(new Attestor(distributor, vm.envAddress("SYSTEM_ACCESS")));
             registryMode = IRevenueRegistry.Mode.ATTESTATION;
         } else {
             revert UnknownMode(mode);
@@ -95,11 +96,24 @@ contract DeployAdapter is Script {
                 adapter,
                 vm.envOr("DAPP", address(0)),
                 uint8(registryMode),
-                uint16(vm.envOr("COMMITTED_BPS", uint256(0))),
-                uint32(vm.envOr("ADAPTER_VERSION", uint256(1))),
+                SafeCast.toUint16(vm.envOr("COMMITTED_BPS", uint256(0))),
+                SafeCast.toUint32(vm.envOr("ADAPTER_VERSION", uint256(1))),
                 vm.envOr("TERMS_HASH", bytes32(0))
             )
         );
+
+        if (registryMode == IRevenueRegistry.Mode.ATTESTATION) {
+            console2.log("");
+            console2.log("Mode C: timelock must grant REPORTER on SystemAccess for this attestor:");
+            console2.logBytes(
+                abi.encodeWithSignature(
+                    "grantRole(address,bytes32,address)",
+                    adapter,
+                    keccak256("REPORTER_ROLE"),
+                    vm.envAddress("REPORTER")
+                )
+            );
+        }
 
         if (registryMode == IRevenueRegistry.Mode.PULL_SAFE) {
             console2.log("");

@@ -1,0 +1,5 @@
+{
+  "filter_paths": "lib|test|script",
+  "exclude_dependencies": true,
+  "detectors_to_exclude": "calls-loop,timestamp,reentrancy-events,reentrancy-benign,uninitialized-local,incorrect-equality,naming-convention,solc-version,pragma,assembly,dead-code,too-many-digits,low-level-calls,unindexed-event-address"
+}

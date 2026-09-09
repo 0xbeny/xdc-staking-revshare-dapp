@@ -5,8 +5,11 @@ import {FeeSplitter} from "../../src/adapters/FeeSplitter.sol";
 import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {RevenueAdapterBase} from "../../src/adapters/RevenueAdapterBase.sol";
 import {ZodiacFeeModule} from "../../src/adapters/ZodiacFeeModule.sol";
+import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
 import {Base} from "../Base.t.sol";
 import {MockSafe} from "../mocks/MockSafe.sol";
+import {ReentrantToken} from "../mocks/ReentrantClaimer.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract AdaptersTest is Base {
     function setUp() public override {
@@ -141,5 +144,64 @@ contract AdaptersTest is Base {
         puller.skim(address(usdc));
         vm.expectRevert(RevenueAdapterBase.NothingToSkim.selector);
         puller.skim(address(usdc));
+    }
+
+    function test_adapterExposesItsFixedTokenSet() public view {
+        address[] memory supported = splitter.supportedTokens();
+        assertEq(supported.length, 2);
+        assertEq(supported[0], address(wxdc));
+        assertEq(supported[1], address(usdc));
+        assertTrue(splitter.isSupported(address(usdc)));
+        assertFalse(splitter.isSupported(address(0xBEEF)));
+    }
+
+    function test_adapterConstructorDeduplicatesTokens() public {
+        address[] memory dup = new address[](3);
+        dup[0] = address(usdc);
+        dup[1] = address(usdc);
+        dup[2] = address(wxdc);
+        FeeSplitter s = new FeeSplitter(dapp, address(distributor), dappTreasury, 3000, dup);
+        assertEq(s.supportedTokens().length, 2);
+    }
+
+    /// @dev Remainder transfer to the dApp treasury must not reenter `skim`.
+    function test_splitterSkimIsNonReentrant() public {
+        ReentrantToken hooked = new ReentrantToken();
+        address[] memory one = new address[](1);
+        one[0] = address(hooked);
+
+        FeeSplitter local = new FeeSplitter(dapp, address(distributor), dappTreasury, 3000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(hooked));
+        registry.registerAdapter(address(local), dapp, IRevenueRegistry.Mode.SPLITTER, 3000, 1, "reenter");
+        vm.stopPrank();
+
+        hooked.mint(address(local), 10_000 ether);
+        hooked.setHook(address(local), abi.encodeCall(FeeSplitter.skim, (address(hooked))));
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        local.skim(address(hooked));
+    }
+
+    /// @dev Source `transferFrom` into the push adapter must not reenter `commitRevenue`.
+    function test_pushCommitIsNonReentrant() public {
+        ReentrantToken hooked = new ReentrantToken();
+        address[] memory one = new address[](1);
+        one[0] = address(hooked);
+
+        PushAdapter local = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(hooked));
+        registry.registerAdapter(address(local), dapp, IRevenueRegistry.Mode.PUSH, 10_000, 1, "reenter-push");
+        vm.stopPrank();
+
+        hooked.mint(dapp, 1000 ether);
+        hooked.setHook(address(local), abi.encodeCall(PushAdapter.commitRevenue, (address(hooked), uint256(1))));
+
+        vm.startPrank(dapp);
+        hooked.approve(address(local), 1000 ether);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        local.commitRevenue(address(hooked), 1000 ether);
+        vm.stopPrank();
     }
 }

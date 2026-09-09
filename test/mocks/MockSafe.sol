@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 /// @notice Minimal Gnosis-Safe-shaped avatar with Zodiac module execution, for Mode B3 tests.
 contract MockSafe {
     mapping(address module => bool) public isModuleEnabled;
+    bool public execFails;
 
     error NotAModule();
     error OnlySelf();
@@ -12,12 +13,20 @@ contract MockSafe {
         isModuleEnabled[module] = true;
     }
 
+    /// @dev Simulates a Safe whose module execution returns `false` (e.g. a guard rejecting it).
+    function setExecFails(bool fails) external {
+        execFails = fails;
+    }
+
     function execTransactionFromModule(address to, uint256 value, bytes calldata data, uint8)
         external
         returns (bool success)
     {
         if (!isModuleEnabled[msg.sender]) {
             revert NotAModule();
+        }
+        if (execFails) {
+            return false;
         }
         (success,) = to.call{value: value}(data);
     }

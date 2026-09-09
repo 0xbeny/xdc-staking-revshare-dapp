@@ -79,14 +79,20 @@ contract UpgradeabilityTest is Base {
         distributor.setEscrow(address(0xBEEF));
     }
 
+    function test_setDistributorIsOneShot() public {
+        vm.prank(timelock);
+        vm.expectRevert(RevenueRegistry.DistributorAlreadySet.selector);
+        registry.setDistributor(address(0xBEEF));
+    }
+
     function test_implementationsCannotBeInitializedDirectly() public {
         FeeDistributor impl = new FeeDistributor();
         vm.expectRevert();
-        impl.initialize(timelock, address(registry));
+        impl.initialize(address(access), address(registry));
 
         RevenueRegistry regImpl = new RevenueRegistry();
         vm.expectRevert();
-        regImpl.initialize(timelock);
+        regImpl.initialize(address(access));
     }
 
     function test_registryUpgradeIsRoleGated() public {

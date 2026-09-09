@@ -29,6 +29,7 @@ contract FeeDistributorClaimTest is Base {
         vm.prank(alice);
         (uint256[] memory first, uint256 remaining) = distributor.claim(a, tokens);
         assertGt(remaining, 0, "more epochs remain");
+        assertGe(remaining, 8, "unsettled closed epochs past the 52-bound still signal a backlog");
         assertGt(first[0], 0);
         // The first page is bounded by MAX_EPOCHS_PER_CLAIM on both the settle walk and the
         // claim walk, so it can never cover all 60 epochs in one call.
@@ -39,6 +40,11 @@ contract FeeDistributorClaimTest is Base {
         (uint256[] memory second, uint256 remaining2) = distributor.claim(a, tokens);
         assertEq(remaining2, 0, "the cursor caught up");
         assertEq(first[0] + second[0], 60 * 100e6, "no epoch lost or double-paid across pages");
+
+        // Mid-epoch after a full catch-up: open epoch must not keep remaining sticky.
+        (uint256 viewAmount, uint256 viewRemaining) = distributor.claimable(a, address(usdc));
+        assertEq(viewAmount, 0);
+        assertEq(viewRemaining, 0);
     }
 
     function test_repeatedClaimsAreIdempotent() public {
@@ -162,6 +168,26 @@ contract FeeDistributorClaimTest is Base {
 
         (uint256 expected,) = distributor.claimable(a, address(usdc));
         assertEq(_claim(alice, a, address(usdc)), expected);
+    }
+
+    /// @dev After the cursor has caught every closed epoch, `remaining` must be 0 even mid-epoch
+    ///      — the open epoch is never part of the backlog signal.
+    function test_remainingIsZeroWhenCaughtUpMidEpoch() public {
+        _notifyExact(address(usdc), 1000e6);
+        _nextEpoch();
+        _notifyExact(address(usdc), 1000e6);
+        // Still inside the open epoch that just started; two closed epochs of revenue.
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+
+        vm.prank(alice);
+        (, uint256 remaining) = distributor.claim(a, tokens);
+        assertEq(remaining, 0, "open epoch must not keep remaining sticky");
+
+        (uint256 amount, uint256 remainingView) = distributor.claimable(a, address(usdc));
+        assertEq(amount, 0);
+        assertEq(remainingView, 0, "claimable agrees mid-epoch");
     }
 
     function test_conservationOfValuePerToken() public {

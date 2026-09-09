@@ -7,11 +7,14 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 ```
                        ┌──────────────────────────────────────────────────────┐
                        │                    Governance                         │
-                       │   Timelock (admin, params)   Guardian (pause only)    │
+                       │   Timelock (admin)   Guardian (pause)   Keeper        │
+                       │              └──────────┬──────────────┘              │
+                       │                   SystemAccess                         │
+                       │            (immutable role hub, per target)            │
                        └───────────┬───────────────────────────┬──────────────┘
                                    │                           │
    native XDC ─▶ ZapDepositor ─▶ ┌─▼──────────────┐      ┌─────▼──────────────┐
-   WXDC ─────────────────────▶  │  VotingEscrow  │      │   FeeDistributor   │
+   WXDC ───────▶ ZapDepositor ─▶ │  VotingEscrow  │      │   FeeDistributor   │
                                 │  (immutable)   │◀────▶│   (UUPS proxy)     │
                                 │  veNFT + weight│ reads │  epochs · claims   │
                                 │  penalty rules │       │  bucket · carry    │
@@ -28,8 +31,9 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 
 | Contract | Mutability | Holds funds | Role |
 |---|---|---|---|
+| `SystemAccess` | immutable | never | central per-target role registry (ops/monitoring hub) |
 | `VotingEscrow` | immutable | **all principal** | soulbound veNFT, weight, penalty rules and parameters |
-| `ZapDepositor` | immutable | never | native XDC → WXDC → lock, in one tx |
+| `ZapDepositor` | immutable | never | **sole** mint path: native XDC or WXDC → `createLockFor` |
 | `FeeDistributor` | UUPS | revenue awaiting claim | weekly epoch accounting and claims |
 | `RevenueRegistry` | UUPS | never | which adapters may notify, and their terms |
 | `PushAdapter` (A) | immutable | never between calls | dApp pushes committed revenue |
@@ -41,6 +45,8 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 
 The rule of thumb: **anything that can be upgraded never holds principal, and anything that
 holds principal can never be upgraded.**
+
+Locker call sequences for every scenario: [USER_FLOWS.md](USER_FLOWS.md).
 
 ## Time
 
@@ -56,7 +62,13 @@ arithmetic lives.
 
 ### Locking
 
-`createLockFor(beneficiary, amount, duration)`:
+`createLockFor(beneficiary, amount, duration)` — **only callable by the wired `depositor`
+(`ZapDepositor`)**. Users never call the escrow to mint; they enter through:
+
+- `zapCreateLock` / `zapCreateLockFor` — native XDC (wrap then mint)
+- `lockWXDC` / `lockWXDCFor` — already-wrapped WXDC (pull then mint)
+
+Rules inside `createLockFor`:
 
 1. `duration` must be a whole number of weeks in `[1, 104]`.
 2. `unlock = ceilWeek(now + duration)` — rounds **up**, so the effective lock is never shorter
@@ -65,11 +77,17 @@ arithmetic lives.
 4. The position records `penaltyCapBps = maxPenaltyBps` at that instant (grandfathering).
 5. It also records `firstEligibleEpoch = epochOf(ceilWeek(now))` — the first epoch whose
    start-of-epoch snapshot can contain it.
+6. Principal is credited from the **balance delta** of the escrow token transfer: if
+   `received != amount` the call reverts (`IncompleteTransfer`). This keeps
+   `totalLocked == token.balanceOf(escrow)`.
+
+`increaseAmount(tokenId, amount)` remains **permissionless** on the escrow (Curve-style /
+auto-compound). `ZapDepositor.zapIncreaseAmount` / `increaseAmountWXDC` are owner-only
+consent UX for topping up via the zap.
 
 ### Weight
 
-The spec defines `weight = amount × effectiveTime / MAX_LOCK` with
-`effectiveTime = min(unlock − t, MAX_LOCK)`. The implementation computes it as
+The canonical weight formula is the **truncated slope** (not `amount × eff / MAX_LOCK`):
 
 ```
 slope  = amount / MAX_LOCK              (integer division, done once)
@@ -117,6 +135,19 @@ including inside the clamped region.
   at or before `t` and recomputes the clamped formula. Historic weight can therefore never drift
   from the formula, and it survives the position being zeroed later.
 
+### Exit cooldown (mature `withdraw` and `emergencyExit`)
+
+Both exits are **two-phase** with a governance-tunable `withdrawalCooldown` (default **24 hours**,
+hard-capped at 7 days via `HARD_MAX_WITHDRAWAL_COOLDOWN`):
+
+1. **Request** — `requestWithdraw` / `requestEmergencyExit`, or the first call to
+   `withdraw` / `emergencyExit` when no request is pending. Early-exit penalty is
+   **snapshotted at request**. While a request is pending, amount/unlock increases revert.
+2. **Finalize** — after `requestedAt + withdrawalCooldown`, a subsequent `withdraw` /
+   `emergencyExit` (or the same call when cooldown is `0`) moves principal.
+
+`cancelExitRequest` clears a pending request with no funds moved.
+
 ### Penalty (`emergencyExit`)
 
 ```
@@ -131,7 +162,8 @@ toLockers  = penalty − toTreasury                 → transferred to the distr
 `maxPenaltyBps` and `penaltySplitBps` are storage variables settable only by the timelock,
 clamped by the immutable constants `HARD_MAX_PENALTY_BPS = 5000` and
 `HARD_MAX_PENALTY_SPLIT_BPS = 5000`. The two destinations are `immutable`. There is no
-PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers.
+PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers
+(after the cooldown finalize step).
 
 **Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance lowering
 the global cap helps everyone at once (`min`); raising it never reaches an existing position.
@@ -163,6 +195,13 @@ exit, and the `exitEpoch` recorded on the position caps what an exited position 
 on the owner's positions. It is how a user lets the keeper run `keepAtMaxLock`. Operators can
 never withdraw, exit, transfer, or claim to a different address.
 
+## SystemAccess
+
+Immutable hub for periphery permissions. Roles are stored as
+`(target contract, role id, account)` so ops can answer “who can pause the distributor?”
+with one read and enumerate members via `getRoleMember*`. Timelock holds the hub admin
+role and is the only granter/revoker. `VotingEscrow` stays outside this hub.
+
 ## FeeDistributor
 
 ### Attribution
@@ -192,8 +231,10 @@ Epochs below `settledEpoch[token]` are final. Claims only read final epochs.
 
 `claim(tokenId, tokens[])` is permissionless (it always pays the position's recipient) and
 walks at most `MAX_EPOCHS_PER_CLAIM = 52` epochs per token, from the position's cursor up to
-`min(settledEpoch, exitEpoch)`. It returns `remaining > 0` when more finalized epochs are
-waiting. The cursor starts at `firstEligibleEpoch`.
+`min(settledEpoch, exitEpoch)`. It returns `remaining > 0` when **closed** epochs still sit
+ahead of the cursor (the open epoch is excluded). That signal includes closed-but-unsettled
+epochs so a bounded `settle` inside `claim` still prompts another call. The cursor starts at
+`firstEligibleEpoch`.
 
 `claimAndLock` claims WXDC and folds it straight back via `increaseAmount` — so the
 weighted-cap rule applies — and degrades to a plain claim once the lock has expired or closed.
@@ -219,19 +260,27 @@ it never backdates it and never loses it.
 Pure metadata: `(dapp, mode, committedBps, version, termsHash, active)` per adapter, plus
 lifetime contribution per `(adapter, token)`. It never holds a balance or an allowance. Terms
 are versioned metadata; changing them cannot change an adapter's on-chain behaviour — a new
-commitment means a new adapter.
+commitment means a new adapter. `setDistributor` is one-shot (mirrors `FeeDistributor.setEscrow`).
+Modes A/B/B2/B3 require `committedBps ∈ (0, 10_000]`; Mode C may record `0` as metadata.
 
 ## Adapters
 
-All adapters share `RevenueAdapterBase`: `(SOURCE, DISTRIBUTOR, DAPP_TREASURY,
+All fund-moving adapters share `RevenueAdapterBase`: `(SOURCE, DISTRIBUTOR, DAPP_TREASURY,
 COMMITTED_BPS, tokens)` are fixed at construction with no setter, no owner and no upgrade
-path. Every sweep splits the full amount in the same transaction, so an adapter never holds a
-balance between calls. B2 and B3 additionally leave the dedicated fee Safe at a zero balance.
+path. Sweep / commit / attest entry points are `nonReentrant`. Every skim splits the full
+amount in the same transaction, so an adapter never holds a balance between calls. B2 and B3
+additionally leave the dedicated fee Safe at a zero balance — B3 asserts that after Safe
+`exec` (raw `transfer` is not SafeERC20-hardened, so a false-returning token reverts
+`SweepIncomplete` rather than reporting a successful empty skim).
+
+**Integration guides:** [adapters/README.md](adapters/README.md) (one page per mode) and
+[INTEGRATION.md](INTEGRATION.md).
 
 The Attestor (Mode C) is the one adapter that serves many dApps: one immutable record per
-`(dapp, token, sourceEpoch)`, funds transferred in the same transaction, `distributionEpoch`
-assigned at receipt. Corrections are posted against a later source period; a negative
-adjustment nets against that transfer and never pulls from the distributor.
+`(dapp, token, sourceEpoch)` via `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`;
+funds transferred in the same transaction, `distributionEpoch` assigned at receipt. Corrections
+are posted against a later source period; a negative adjustment nets against that transfer and
+never pulls from the distributor.
 
 ## VeVotesAdapter
 

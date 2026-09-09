@@ -7,9 +7,9 @@ Chain id **50** (mainnet), **51** (Apothem testnet). Explorer: xdcscan.
 | Item | Requirement |
 |---|---|
 | `TIMELOCK` | A deployed **contract** (OpenZeppelin `TimelockController` ≥ 48h, owned by the multisig). The script refuses an EOA on chain 50. |
-| `GUARDIAN` | A deployed **contract** (a Safe). Holds `PAUSER_ROLE` only. The script refuses an EOA on chain 50. |
+| `GUARDIAN` | A deployed **contract** (a Safe). Holds `PAUSER_ROLE` on the distributor target in `SystemAccess` only. The script refuses an EOA on chain 50. |
 | `TREASURY` | Where the treasury share of penalties goes. Immutable in the escrow — get it right. |
-| `KEEPER` | The Hermes signer. Holds `KEEPER_ROLE` only. |
+| `KEEPER` | The Hermes signer. Holds `KEEPER_ROLE` on the distributor target in `SystemAccess` only. |
 | `WXDC` | The canonical wrapped-XDC contract. **Verify it against the official XDC Network documentation** — the script checks it is a contract with 18 decimals, nothing more. |
 | `REWARD_TOKENS` | Comma-separated. Launch: WXDC and USDC. |
 | `MAX_PENALTY_BPS` | Launch value ≤ 5000 (hard clamp). Spec suggests 5000. |
@@ -32,15 +32,29 @@ role is wrong. The same library runs under the test-suite, so `forge test` is a 
 
 ## 2. Rehearse on Apothem (chain 51)
 
+Canonical Apothem WXDC: `0x56408DC41E35d3E8E92A16bc94787438df9387a1`. Deploy mock USDC first:
+
 ```bash
 cast wallet import deployer --interactive    # once
 export DEPLOYER_ACCOUNT=deployer
+# TIMELOCK / GUARDIAN / KEEPER must be a *different* EOA from the deployer
+make deploy-apothem-mocks
+# paste USDC / REWARD_TOKENS into .env
 make deploy-apothem
 ```
+
+Apothem often under-estimates gas for `ERC1967Proxy` CREATE+`initialize`. The Make
+targets pass `--gas-estimate-multiplier 200`. If a run still stops after
+`SystemAccess` + registry impl, set `SYSTEM_ACCESS` / `REVENUE_REGISTRY` /
+`REVENUE_REGISTRY_IMPL` and run `make deploy-apothem-continue`.
+
+Live addresses: [`deployments/51.json`](../deployments/51.json).
 
 Then run through [OPERATIONS.md](OPERATIONS.md) for at least two epoch boundaries: sweep,
 `keepAtMaxLock` in the window, `batchCompound` after it, a claim, an early exit, and a
 `syncForfeiture`. Confirm the numbers reconcile with `docs/ARCHITECTURE.md`.
+
+Keeper + indexer crons live in `apps/indexer` (`POST /api/keeper`, `POST /api/sync`).
 
 ## 3. Mainnet
 
@@ -70,7 +84,8 @@ The deployer ends the run with **no privilege anywhere in the system**.
       for any that failed).
 - [ ] `deployments/50.json` committed.
 - [ ] `escrow.timelock()`, `escrow.treasury()`, `escrow.distributor()` match the config.
-- [ ] `distributor.hasRole(DEFAULT_ADMIN_ROLE, deployer) == false` (and every other role).
+- [ ] `systemAccess.hasRole(DEFAULT_ADMIN_ROLE, deployer) == false`
+- [ ] `systemAccess.hasRole(distributor, DEFAULT_ADMIN_ROLE, deployer) == false` (and every other target role).
 - [ ] Timelock proposal queued to register the launch adapters (see [INTEGRATION.md](INTEGRATION.md)).
 - [ ] Hermes configured with the keeper key and the addresses from `deployments/50.json`.
 - [ ] Guardian Safe signers rehearsed `distributor.pause()` on Apothem.

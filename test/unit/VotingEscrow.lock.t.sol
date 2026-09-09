@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
+import {ZapDepositor} from "../../src/ZapDepositor.sol";
 import {Base} from "../Base.t.sol";
 import {MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
 
@@ -25,26 +26,34 @@ contract VotingEscrowLockTest is Base {
 
     function test_createLock_revertsOnUnalignedDuration() public {
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 1 ether);
+        wxdc.approve(address(zap), 1 ether);
         vm.expectRevert(VotingEscrow.DurationNotWeekAligned.selector);
-        escrow.createLock(1 ether, 8 days);
+        zap.lockWXDC(1 ether, 8 days);
         vm.stopPrank();
     }
 
     function test_createLock_revertsOutsideRange() public {
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 2 ether);
+        wxdc.approve(address(zap), 2 ether);
         vm.expectRevert(VotingEscrow.DurationOutOfRange.selector);
-        escrow.createLock(1 ether, 105 weeks);
+        zap.lockWXDC(1 ether, 105 weeks);
         vm.expectRevert(VotingEscrow.DurationOutOfRange.selector);
-        escrow.createLock(1 ether, 0);
+        zap.lockWXDC(1 ether, 0);
         vm.stopPrank();
     }
 
     function test_createLock_revertsOnZeroAmount() public {
         vm.prank(alice);
-        vm.expectRevert(VotingEscrow.ZeroAmount.selector);
-        escrow.createLock(0, 4 weeks);
+        vm.expectRevert(ZapDepositor.ZeroAmount.selector);
+        zap.lockWXDC(0, 4 weeks);
+    }
+
+    function test_directEscrowMintRevertsForNonDepositor() public {
+        vm.startPrank(alice);
+        wxdc.approve(address(escrow), 1 ether);
+        vm.expectRevert(VotingEscrow.NotDepositor.selector);
+        escrow.createLockFor(alice, 1 ether, 4 weeks);
+        vm.stopPrank();
     }
 
     function test_createLockFor_checksEligibilityOfBeneficiaryNotFunder() public {
@@ -52,9 +61,9 @@ contract VotingEscrowLockTest is Base {
 
         // A contract with no tier cannot be a beneficiary...
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 1 ether);
+        wxdc.approve(address(zap), 1 ether);
         vm.expectRevert(abi.encodeWithSelector(VotingEscrow.IneligibleAccount.selector, address(custodian)));
-        escrow.createLockFor(address(custodian), 1 ether, 4 weeks);
+        zap.lockWXDCFor(address(custodian), 1 ether, 4 weeks);
         vm.stopPrank();
 
         // ...until governance grants it a tier.
@@ -62,8 +71,8 @@ contract VotingEscrowLockTest is Base {
         escrow.setTier(address(custodian), VotingEscrow.Tier.CUSTODIAN);
 
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 1 ether);
-        uint256 tokenId = escrow.createLockFor(address(custodian), 1 ether, 4 weeks);
+        wxdc.approve(address(zap), 1 ether);
+        uint256 tokenId = zap.lockWXDCFor(address(custodian), 1 ether, 4 weeks);
         vm.stopPrank();
         assertEq(escrow.ownerOf(tokenId), address(custodian));
     }
@@ -76,16 +85,16 @@ contract VotingEscrowLockTest is Base {
         escrow.setTier(address(bad), VotingEscrow.Tier.CUSTODIAN);
 
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 1 ether);
+        wxdc.approve(address(zap), 1 ether);
         vm.expectRevert();
-        escrow.createLockFor(address(bad), 1 ether, 4 weeks);
+        zap.lockWXDCFor(address(bad), 1 ether, 4 weeks);
         vm.stopPrank();
     }
 
     function test_createLockFor_eoaNeedsNoWhitelist() public {
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 1 ether);
-        uint256 tokenId = escrow.createLockFor(bob, 1 ether, 4 weeks);
+        wxdc.approve(address(zap), 1 ether);
+        uint256 tokenId = zap.lockWXDCFor(bob, 1 ether, 4 weeks);
         vm.stopPrank();
         assertEq(escrow.ownerOf(tokenId), bob);
     }
@@ -195,9 +204,14 @@ contract VotingEscrowLockTest is Base {
     }
 
     function test_specNamedAliasesWork() public {
+        vm.startPrank(address(zap));
+        // Alias is still depositor-gated; the zap holds WXDC from a prior user transfer in real
+        // flows. Here the test contract is not the zap — exercise increase aliases after a zap mint.
+        vm.stopPrank();
+
+        uint256 tokenId = _lock(alice, 1 ether, 4 weeks);
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 2 ether);
-        uint256 tokenId = escrow.create_lock_for(alice, 1 ether, 4 weeks);
+        wxdc.approve(address(escrow), 1 ether);
         escrow.increase_amount(tokenId, 1 ether);
         escrow.increase_unlock_time(tokenId, block.timestamp + 20 weeks);
         vm.stopPrank();

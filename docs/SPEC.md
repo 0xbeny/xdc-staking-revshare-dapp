@@ -21,13 +21,13 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 ```
         Governance (Multisig → Timelock) — periphery config + escrow params within immutable clamps
                            │
-   User ──XDC───▶ ZapDepositor ──create_lock_for──▶ ┌──────────────────────┐
-                                                    │  VotingEscrow        │
-                                                    │  soulbound veXDC NFT │
-                                                    │  penalty formula,    │
-                                                    │  params, clamps and  │
-                                                    │  destinations INSIDE │
-                                                    └───────┬──────────────┘
+   User ──XDC / WXDC───▶ ZapDepositor ──create_lock_for──▶ ┌──────────────────────┐
+                                                          │  VotingEscrow        │
+                                                          │  soulbound veXDC NFT │
+                                                          │  penalty formula,    │
+                                                          │  params, clamps and  │
+                                                          │  destinations INSIDE │
+                                                          └───────┬──────────────┘
                                                             │ snapshots · penalties
                                                     ┌───────▼──────────┐
     Immutable revenue adapters ──notifyRevenue──▶   │  FeeDistributor  │◀─ forfeiture bucket
@@ -46,11 +46,15 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 ### 3.1 VotingEscrow — immutable
 
 **Locking:**
-- WXDC direct, or native XDC via `ZapDepositor` → `create_lock_for(beneficiary, ...)`; eligibility checked against the beneficiary.
+- WXDC or native XDC **only via `ZapDepositor`** → `create_lock_for(beneficiary, ...)`; the escrow rejects every other mint caller. Eligibility is checked against the beneficiary.
 - `duration % 1 weeks == 0`, `MIN_LOCK ≤ duration ≤ MAX_LOCK`. Unlock **rounds UP** to the next week boundary; `require(effective ≥ MIN_LOCK)`.
-- **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. Weight = `amount × effectiveTime / MAX_LOCK`; penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
-- `increase_amount(tokenId, amount)`, `increase_unlock_time(tokenId, newUnlock)` (same round-up + clamp).
-- `withdraw(tokenId)` after expiry: full principal, unconditional under any periphery state.
+- **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. **Weight uses the truncated slope** `weight = (amount / MAX_LOCK) × effectiveTime` so Σ positions == `totalSupply` to the wei (dust locks with `amount < MAX_LOCK` have zero weight). Penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
+- `increase_amount(tokenId, amount)` is **permissionless** (anyone may fund a position; the cap re-weights). `increase_unlock_time(tokenId, newUnlock)` is owner-or-operator only (same round-up + clamp). `ZapDepositor.zapIncreaseAmount` is owner-only as a native-XDC consent UX; auto-compound uses the escrow path.
+- `withdraw(tokenId)` after expiry and `emergencyExit(tokenId)` before expiry: both are two-phase
+  with a timelock-tunable `withdrawalCooldown` (default 24h, hard max 7d). First call (or
+  `requestWithdraw` / `requestEmergencyExit`) arms the exit; after the delay, a subsequent call
+  pays out. Early-exit penalty is snapshotted at request. `cancelExitRequest` aborts with no
+  funds moved. When cooldown is `0`, a single call still completes.
 - **No split, no merge (#2).** Multiple maturities = multiple positions. This deletes checkpoint lineage, reward-debt migration, forced-settlement plumbing, and the mid-epoch entitlement-migration problem from the immutable core entirely.
 
 **Soulbound (#9 — Option B):** `transferFrom`/`safeTransferFrom` revert unconditionally. **There is no `wrapInto` and no transfer carve-out of any kind.** The future stveXDC wrapper accepts only new WXDC deposits; existing veNFT positions are never wrappable. Migration path for existing lockers is natural: every position expires within ≤ 104 weeks, after which the holder can withdraw and re-deposit into the wrapper if they prefer the liquid lane. This keeps v1's escrow free of any underspecified future-module code.
@@ -70,7 +74,7 @@ Registry: whitelisting, terms/mode/version, lifetime contribution. No allowances
 - **Mode B2 — PullAdapter on a dedicated fee Safe.** Allowance to the immutable adapter only; `skim()` sweeps the full balance (committed → distributor, remainder → dApp treasury).
 - **Mode B3 — Zodiac module on a dedicated fee Safe (#7).** Same sweep-both rule. **B3 no longer operates on a general treasury Safe** — commingled treasury capital must never be bps-taxed. The dApp routes fees to a dedicated fee Safe and installs the module there.
 - **Unified B2/B3 invariant (#7):** `feeSafe balance == 0` after every successful sweep; everything entering that address is definitionally revenue.
-- **Mode C — atomic epoch attestation (#6).** `postRevenue(dapp, token, sourceEpoch, amount, metadataHash)`: exactly one immutable record per `(dapp, token, sourceEpoch)`; record and fund transfer are one atomic transaction; duplicates revert. **No pre-finalization superseding, no mutable state.** Errors are corrected by posting a signed adjustment against a *later* source period — a positive adjustment transfers additional funds; a negative adjustment offsets against that later transfer (never a clawback from the distributor).
+- **Mode C — atomic epoch attestation (#6).** `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`: exactly one immutable record per `(dapp, token, sourceEpoch)`; record and fund transfer are one atomic transaction; duplicates revert. **No pre-finalization superseding, no mutable state.** `net = gross + adjustment` must be ≥ 0; positive net transfers that amount, zero net records without transferring. Errors are corrected by posting a signed adjustment against a *later* source period — a positive adjustment transfers additional funds; a negative adjustment offsets against that later transfer (never a clawback from the distributor).
 
 **Revenue attribution — frozen rule (#8):**
 
@@ -134,7 +138,7 @@ Unchanged framing from v0.4 (stylized, assumptions stated, dominance claims scop
 
 ## 7. Security program
 
-Foundry invariants first-class; fork audited escrow references, audit the diff; Slither + Mythril CI; 100% branch coverage on escrow + distributor.
+Foundry invariants first-class; fork audited escrow references, audit the diff; Slither in `make ci`; branch coverage tracked in [`SECURITY.md`](SECURITY.md) (`FeeDistributor` / adapters / registry at 100%; escrow 57/65 with documented unreachable defensive branches).
 
 **Named invariants (v0.5 set):**
 - Principal safety: no path but immutable withdraw/exit; `emergencyExit` makes no external calls; post-maturity `withdraw` succeeds under hostile periphery.
@@ -169,3 +173,5 @@ Example economics: 5,300 USDC + 18,000 WXDC per weekly epoch, 25M total ve.
 3. **Earning (#13, corrected):** **if the position maintains roughly a 0.2% share for ten epochs** — e.g. via `keepAtMaxLock`, with total supply roughly stable — it accrues ~106 USDC + ~360 WXDC over those ten weeks. Without re-extension the share decays linearly each week (≈0.19% by week 10, halved by week 26), so a passive claim lands proportionally lower.
 4. **Receiving:** one cursor-bounded `claim()` (a 10-week backlog fits comfortably in one call); or opt into `autoCompound` and, separately, `keepAtMaxLock` (executed in the pre-boundary window so full weight is what gets snapshotted). `setRecipient` for custody/cash-flow separation.
 5. **Endgame:** withdraw full principal at expiry, or re-extend and continue (cap unchanged by extension). Early exit at week 26 of 52: `effectiveTime = 26w`, penalty = cap × 26/104 → at a 50% cap, 12.5% → 87,500 XDC back, finalized rewards paid in full, forfeits streaming to remaining lockers from the next epoch. Until the wrapper ships, this is the only early door.
+
+Concrete call sequences for every locker path (Zap, cooldown exits, operator, Safe, multi-NFT): [`USER_FLOWS.md`](USER_FLOWS.md).

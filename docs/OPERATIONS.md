@@ -1,6 +1,7 @@
 # Operations runbook — Hermes keeper
 
-Hermes is the off-chain keeper. It holds `KEEPER_ROLE` on the distributor and nothing else.
+Hermes is the off-chain keeper. It holds `KEEPER_ROLE` on the distributor target in
+`SystemAccess` and nothing else.
 Every keeper transaction is epoch-guarded, so a stale transaction reverts instead of doing
 something surprising.
 
@@ -58,6 +59,6 @@ Rounding dust (at most one wei per claim) stays in the contract and is never los
 |---|---|
 | Adapter compromised / dApp terms breached | Timelock: `registry.deactivateAdapter(adapter)`. It can no longer notify. Funds already notified stay claimable. |
 | Distributor bug suspected | Guardian: `distributor.pause()`. Users can still `withdraw` and `emergencyExit`. Timelock proposes an upgrade. |
-| Keeper key compromised | Timelock: `revokeRole(KEEPER_ROLE, old)`, `grantRole(KEEPER_ROLE, new)`. The keeper can only extend opted-in locks and compound opted-in rewards; it cannot move principal or redirect claims. |
-| Reporter (Mode C) key compromised | Timelock: `attestor.setReporter(new)`. Records are immutable; a bad record is corrected by a later negative adjustment. |
+| Keeper key compromised | Timelock on `SystemAccess`: `revokeRole(distributor, KEEPER_ROLE, old)`, `grantRole(distributor, KEEPER_ROLE, new)`. The keeper can only extend opted-in locks and compound opted-in rewards; it cannot move principal or redirect claims. |
+| Reporter (Mode C) key compromised | Timelock on `SystemAccess`: `revokeRole(attestor, REPORTER_ROLE, old)`, `grantRole(attestor, REPORTER_ROLE, new)`. Records are immutable; a bad record is corrected by a later negative adjustment. |
 | Missed `keepAtMaxLock` window | Nothing to do on-chain. Communicate; the decayed snapshot stands for that week. |

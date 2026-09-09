@@ -1,0 +1,20 @@
+{
+  "name": "xdc-staking-revshare-dapp",
+  "private": true,
+  "packageManager": "pnpm@10.18.2",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "contracts:build": "forge build",
+    "contracts:abis": "node packages/contracts/scripts/extract-abis.mjs",
+    "prepare:contracts": "pnpm contracts:build && pnpm contracts:abis"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3",
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  }
+}

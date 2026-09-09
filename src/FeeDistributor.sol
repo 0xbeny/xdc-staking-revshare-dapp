@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IFeeDistributor} from "./interfaces/IFeeDistributor.sol";
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
+import {ISystemAccess} from "./interfaces/ISystemAccess.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
+import {Constants} from "./libraries/Constants.sol";
 import {EpochTime} from "./libraries/EpochTime.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {Roles} from "./libraries/Roles.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -33,18 +36,19 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///    share. Settlement moves exactly `pot * exitedWeight / supply` into the *next* epoch's pot
 ///    without ever modifying the exited epoch's denominator, so an exiting position can never
 ///    receive its own forfeiture.
-contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
+contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
+    bytes32 public constant DEFAULT_ADMIN_ROLE = Roles.DEFAULT_ADMIN;
+    bytes32 public constant UPGRADER_ROLE = Roles.UPGRADER;
+    bytes32 public constant PAUSER_ROLE = Roles.PAUSER;
+    bytes32 public constant KEEPER_ROLE = Roles.KEEPER;
 
-    uint256 public constant WEEK = 7 days;
+    uint256 public constant WEEK = Constants.WEEK;
     /// @notice Hard bound on epochs walked per claim call. No unbounded loop exists anywhere.
     uint256 public constant MAX_EPOCHS_PER_CLAIM = 52;
     /// @notice Pre-boundary keeper window (§5): the last two hours of an epoch.
@@ -54,6 +58,8 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Central role registry. Roles for this proxy are keyed by `address(this)`.
+    ISystemAccess public authority;
     IVotingEscrow public escrow;
     IRevenueRegistry public registry;
 
@@ -95,8 +101,11 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     mapping(uint256 tokenId => bool) public autoCompound;
     mapping(uint256 tokenId => bool) public keepAtMaxLock;
 
-    // forge-lint: disable-next-line(mixed-case-variable)
+    // Reserved storage for future upgrades; intentionally never read.
+    // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
+    // slither-disable-next-line unused-state
     uint256[40] private __gap;
+    // forge-lint: disable-end(mixed-case-variable, unused-state-variables)
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -124,7 +133,6 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     error ZeroAddress();
     error ZeroAmount();
     error EscrowAlreadySet();
-    error EscrowNotSet();
     error NotAnActiveAdapter();
     error UnknownRewardToken();
     error TokenNotAccepting();
@@ -132,7 +140,6 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     error NotAuthorized();
     error StaleEpoch();
     error OutsideKeeperWindow();
-    error NotOptedIn();
 
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
@@ -142,26 +149,27 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         _disableInitializers();
     }
 
-    function initialize(address admin, address registry_) external initializer {
-        if (admin == address(0) || registry_ == address(0)) {
+    function initialize(address authority_, address registry_) external initializer {
+        if (authority_ == address(0) || registry_ == address(0)) {
             revert ZeroAddress();
         }
-        __AccessControl_init();
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(UPGRADER_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
-
+        authority = ISystemAccess(authority_);
         registry = IRevenueRegistry(registry_);
         startEpoch = EpochTime.currentEpoch();
     }
 
+    /// @dev Convenience view: same shape as AccessControl, reads from `SystemAccess`.
+    function hasRole(bytes32 role, address account) external view returns (bool) {
+        return authority.hasRole(address(this), role, account);
+    }
+
     /// @dev The escrow is deployed after this proxy (it needs the distributor as an immutable
     ///      penalty destination), so it is wired in exactly once, by the admin, post-deploy.
-    function setEscrow(address escrow_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setEscrow(address escrow_) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (escrow_ == address(0)) {
             revert ZeroAddress();
         }
@@ -172,13 +180,13 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         emit EscrowSet(escrow_);
     }
 
-    function _authorizeUpgrade(address) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address) internal override onlyAuthorityRole(UPGRADER_ROLE) {}
 
     /*//////////////////////////////////////////////////////////////
                               ADMIN / GUARD
     //////////////////////////////////////////////////////////////*/
 
-    function addRewardToken(address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addRewardToken(address token) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) {
             revert ZeroAddress();
         }
@@ -194,7 +202,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
     /// @dev Stops *new* revenue for a token. Already-notified revenue stays fully claimable —
     ///      there is no path that strands or reclaims it.
-    function setAcceptingRevenue(address token, bool accepting) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAcceptingRevenue(address token, bool accepting) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (!isRewardToken[token]) {
             revert UnknownRewardToken();
         }
@@ -202,12 +210,17 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         emit RewardTokenAccepting(token, accepting);
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
+    function pause() external onlyAuthorityRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
+    }
+
+    modifier onlyAuthorityRole(bytes32 role) {
+        authority.checkRole(address(this), role, _msgSender());
+        _;
     }
 
     function rewardTokens() external view returns (address[] memory) {
@@ -220,7 +233,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
     /// @notice Called by a registered, active adapter. Attribution is the *receipt* epoch.
     function notifyRevenue(address token, uint256 amount) external nonReentrant whenNotPaused {
-        if (!registry.isActiveAdapter(msg.sender)) {
+        if (!registry.isActiveAdapter(_msgSender())) {
             revert NotAnActiveAdapter();
         }
         if (!isRewardToken[token]) {
@@ -238,7 +251,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         _syncForfeiture(token);
 
         uint256 before = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
         uint256 received = IERC20(token).balanceOf(address(this)) - before;
 
         uint256 epoch = EpochTime.currentEpoch();
@@ -246,8 +259,8 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         epochRevenue[token][epoch] += received;
         totalNotified[token] += received;
 
-        registry.recordContribution(msg.sender, token, received);
-        emit RevenueNotified(token, msg.sender, received, epoch);
+        registry.recordContribution(_msgSender(), token, received);
+        emit RevenueNotified(token, _msgSender(), received, epoch);
     }
 
     /// @notice Attributes any unaccounted balance (escrow penalties, donations) to `currentEpoch + 1`.
@@ -289,12 +302,12 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
         uint256 cursor = settledEpoch[token];
         uint256 current = EpochTime.currentEpoch();
-        uint256 processed;
+        uint256 processed = 0;
 
         while (cursor < current && processed < maxEpochs) {
             uint256 supply = _supplyFor(cursor);
             uint256 pot = epochRevenue[token][cursor];
-            uint256 movedForward;
+            uint256 movedForward = 0;
 
             if (supply == 0) {
                 // Nobody could ever claim this epoch: carry the whole pot forward.
@@ -355,7 +368,8 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
 
     /// @notice Claims up to `MAX_EPOCHS_PER_CLAIM` finalized epochs per token.
     /// @return amounts Per-token amount transferred to the position's recipient.
-    /// @return remaining Finalized epochs still unclaimed across `tokens`; call again if non-zero.
+    /// @return remaining Closed epochs still ahead of the cursor (open epoch excluded). Call again
+    ///         if non-zero — `claim` settles then pays, so this covers unsettled closed epochs too.
     function claim(uint256 tokenId, address[] calldata tokens)
         external
         nonReentrant
@@ -364,7 +378,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     {
         address to = _recipient(tokenId);
         amounts = new uint256[](tokens.length);
-        for (uint256 i; i < tokens.length; ++i) {
+        for (uint256 i = 0; i < tokens.length; ++i) {
             (uint256 amount, uint256 left) = _accrue(tokenId, tokens[i]);
             remaining += left;
             amounts[i] = amount;
@@ -380,14 +394,20 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     /// @notice Claims the escrow token and folds it straight back into the position.
     /// @dev Never extends duration and never changes the penalty cap beyond the weighted
     ///      `increase_amount` rule. Degrades to a plain claim once the lock is closed or expired.
-    function claimAndLock(uint256 tokenId) public nonReentrant whenNotPaused returns (uint256 amount) {
-        address owner = escrow.ownerOf(tokenId);
-        if (msg.sender != owner && !escrow.isOperator(owner, msg.sender)) {
-            if (!(hasRole(KEEPER_ROLE, msg.sender) && autoCompound[tokenId])) {
-                revert NotAuthorized();
-            }
+    function claimAndLock(uint256 tokenId) public nonReentrant whenNotPaused returns (uint256) {
+        if (!_mayCompound(tokenId, _msgSender())) {
+            revert NotAuthorized();
         }
         return _compound(tokenId);
+    }
+
+    /// @dev The owner, an escrow operator of the owner, or the keeper for an opted-in position.
+    function _mayCompound(uint256 tokenId, address caller) internal view returns (bool) {
+        address owner = escrow.ownerOf(tokenId);
+        if (caller == owner || escrow.isOperator(owner, caller)) {
+            return true;
+        }
+        return autoCompound[tokenId] && authority.hasRole(address(this), KEEPER_ROLE, caller);
     }
 
     function _compound(uint256 tokenId) internal returns (uint256 amount) {
@@ -401,9 +421,11 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         totalClaimed[token] += amount;
 
         IVotingEscrow.Lock memory lock = escrow.locked(tokenId);
-        if (lock.amount == 0 || lock.end <= block.timestamp) {
-            IERC20(token).safeTransfer(_recipient(tokenId), amount);
-            emit Claimed(tokenId, token, _recipient(tokenId), amount, claimCursor[tokenId][token]);
+        bool lockIsLive = lock.amount > 0 && lock.end > block.timestamp;
+        if (!lockIsLive) {
+            address to = _recipient(tokenId);
+            IERC20(token).safeTransfer(to, amount);
+            emit Claimed(tokenId, token, to, amount, claimCursor[tokenId][token]);
             return amount;
         }
 
@@ -412,48 +434,38 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         emit Compounded(tokenId, amount);
     }
 
+    /// @dev Finalises what can be finalised, then advances the position's cursor over it.
     function _accrue(uint256 tokenId, address token) internal returns (uint256 amount, uint256 remaining) {
         if (!isRewardToken[token]) {
             revert UnknownRewardToken();
         }
+        // Also memoises the snapshot supply of every epoch it finalises, so `_pending` below
+        // never has to recompute one.
         settle(token, MAX_EPOCHS_PER_CLAIM);
 
-        uint256 cursor = _cursor(tokenId, token);
-        uint256 finalEpoch = _finalEpoch(tokenId);
-        uint256 limit = settledEpoch[token];
-        if (finalEpoch < limit) {
-            limit = finalEpoch;
-        }
-
-        uint256 processed;
-        while (cursor < limit && processed < MAX_EPOCHS_PER_CLAIM) {
-            uint256 supply = _supplyFor(cursor);
-            if (supply > 0) {
-                uint256 pot = epochRevenue[token][cursor];
-                if (pot > 0) {
-                    uint256 weight = escrow.balanceOfNFTAt(tokenId, EpochTime.startOfEpoch(cursor));
-                    if (weight > 0) {
-                        amount += (pot * weight) / supply;
-                    }
-                }
-            }
-            unchecked {
-                ++cursor;
-                ++processed;
-            }
-        }
-        claimCursor[tokenId][token] = cursor;
-
-        uint256 claimableThrough = _finalEpoch(tokenId);
-        uint256 current = EpochTime.currentEpoch();
-        if (claimableThrough > current) {
-            claimableThrough = current;
-        }
-        remaining = claimableThrough > cursor ? claimableThrough - cursor : 0;
+        uint256 newCursor;
+        (amount, newCursor, remaining) = _pending(tokenId, token);
+        claimCursor[tokenId][token] = newCursor;
     }
 
     /// @notice Read-only estimate. Call `settle` first for an exact figure after an exit epoch.
     function claimable(uint256 tokenId, address token) external view returns (uint256 amount, uint256 remaining) {
+        (amount,, remaining) = _pending(tokenId, token);
+    }
+
+    /// @dev The one accounting walk behind both `claim` and `claimable`: the position's share of
+    ///      every settled epoch from its cursor, bounded by `MAX_EPOCHS_PER_CLAIM`.
+    /// @return amount   Claimable now.
+    /// @return newCursor Where the cursor lands after this page.
+    /// @return remaining Closed epochs still ahead of the new cursor (open epoch excluded);
+    ///                    non-zero means call again. Uses `currentEpoch` as an exclusive end so
+    ///                    unsettled closed epochs still signal a backlog; settled-only math would
+    ///                    report `0` mid-pagination after a bounded `settle`.
+    function _pending(uint256 tokenId, address token)
+        internal
+        view
+        returns (uint256 amount, uint256 newCursor, uint256 remaining)
+    {
         uint256 cursor = _cursor(tokenId, token);
         uint256 finalEpoch = _finalEpoch(tokenId);
         uint256 limit = settledEpoch[token];
@@ -461,16 +473,14 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
             limit = finalEpoch;
         }
 
-        uint256 processed;
+        uint256 processed = 0;
         while (cursor < limit && processed < MAX_EPOCHS_PER_CLAIM) {
-            uint256 supply = _supplyForView(cursor);
-            if (supply > 0) {
-                uint256 pot = epochRevenue[token][cursor];
-                if (pot > 0) {
+            uint256 pot = epochRevenue[token][cursor];
+            if (pot > 0) {
+                uint256 supply = _supplyForView(cursor);
+                if (supply > 0) {
                     uint256 weight = escrow.balanceOfNFTAt(tokenId, EpochTime.startOfEpoch(cursor));
-                    if (weight > 0) {
-                        amount += (pot * weight) / supply;
-                    }
+                    amount += (pot * weight) / supply;
                 }
             }
             unchecked {
@@ -478,12 +488,14 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
                 ++processed;
             }
         }
-        uint256 claimableThrough = _finalEpoch(tokenId);
-        uint256 current = EpochTime.currentEpoch();
-        if (claimableThrough > current) {
-            claimableThrough = current;
+        newCursor = cursor;
+
+        // Closed epochs are `[start, currentEpoch)`. The open epoch is never claimable.
+        uint256 closedEnd = EpochTime.currentEpoch();
+        if (finalEpoch < closedEnd) {
+            closedEnd = finalEpoch;
         }
-        remaining = claimableThrough > cursor ? claimableThrough - cursor : 0;
+        remaining = closedEnd > cursor ? closedEnd - cursor : 0;
     }
 
     function _cursor(uint256 tokenId, address token) internal view returns (uint256) {
@@ -511,27 +523,29 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
                             POSITION SETTINGS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Custody / cash-flow separation. No transfers exist, so there is no reset logic.
-    function setRecipient(uint256 tokenId, address to) external {
-        if (msg.sender != escrow.ownerOf(tokenId)) {
+    modifier onlyPositionOwner(uint256 tokenId) {
+        _requirePositionOwner(tokenId);
+        _;
+    }
+
+    function _requirePositionOwner(uint256 tokenId) internal view {
+        if (_msgSender() != escrow.ownerOf(tokenId)) {
             revert NotPositionOwner();
         }
+    }
+
+    /// @notice Custody / cash-flow separation. No transfers exist, so there is no reset logic.
+    function setRecipient(uint256 tokenId, address to) external onlyPositionOwner(tokenId) {
         recipientOf[tokenId] = to;
         emit RecipientSet(tokenId, to);
     }
 
-    function setAutoCompound(uint256 tokenId, bool enabled) external {
-        if (msg.sender != escrow.ownerOf(tokenId)) {
-            revert NotPositionOwner();
-        }
+    function setAutoCompound(uint256 tokenId, bool enabled) external onlyPositionOwner(tokenId) {
         autoCompound[tokenId] = enabled;
         emit AutoCompoundSet(tokenId, enabled);
     }
 
-    function setKeepAtMaxLock(uint256 tokenId, bool enabled) external {
-        if (msg.sender != escrow.ownerOf(tokenId)) {
-            revert NotPositionOwner();
-        }
+    function setKeepAtMaxLock(uint256 tokenId, bool enabled) external onlyPositionOwner(tokenId) {
         keepAtMaxLock[tokenId] = enabled;
         emit KeepAtMaxLockSet(tokenId, enabled);
     }
@@ -544,7 +558,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     ///         snapshot sees full weight. A missed window is never retroactively corrected.
     function batchKeepAtMaxLock(uint256[] calldata tokenIds, uint256 expectedEpoch)
         external
-        onlyRole(KEEPER_ROLE)
+        onlyAuthorityRole(KEEPER_ROLE)
         whenNotPaused
     {
         uint256 current = EpochTime.currentEpoch();
@@ -556,7 +570,7 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
             revert OutsideKeeperWindow();
         }
 
-        for (uint256 i; i < tokenIds.length; ++i) {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
             uint256 tokenId = tokenIds[i];
             if (!keepAtMaxLock[tokenId]) {
                 emit KeeperExtended(tokenId, false);
@@ -574,13 +588,13 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
     function batchCompound(uint256[] calldata tokenIds, uint256 expectedEpoch)
         external
         nonReentrant
-        onlyRole(KEEPER_ROLE)
+        onlyAuthorityRole(KEEPER_ROLE)
         whenNotPaused
     {
         if (EpochTime.currentEpoch() != expectedEpoch) {
             revert StaleEpoch();
         }
-        for (uint256 i; i < tokenIds.length; ++i) {
+        for (uint256 i = 0; i < tokenIds.length; ++i) {
             if (!autoCompound[tokenIds[i]]) {
                 continue;
             }

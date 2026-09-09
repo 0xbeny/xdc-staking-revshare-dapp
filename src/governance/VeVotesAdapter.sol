@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {IVotingEscrow} from "../interfaces/IVotingEscrow.sol";
 import {IVotes} from "@openzeppelin/contracts/governance/utils/IVotes.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title VeVotesAdapter
 /// @notice Read-only IVotes view over checkpointed veXDC weight (§3.5).
@@ -22,7 +23,7 @@ contract VeVotesAdapter is IVotes {
     }
 
     function clock() public view returns (uint48) {
-        return uint48(block.timestamp);
+        return SafeCast.toUint48(block.timestamp);
     }
 
     // forge-lint: disable-next-line(mixed-case-function)
@@ -32,14 +33,14 @@ contract VeVotesAdapter is IVotes {
 
     function getVotes(address account) external view returns (uint256 total) {
         uint256[] memory ids = ESCROW.tokensOfOwner(account);
-        for (uint256 i; i < ids.length; ++i) {
+        for (uint256 i = 0; i < ids.length; ++i) {
             total += ESCROW.balanceOfNFT(ids[i]);
         }
     }
 
     function getPastVotes(address account, uint256 timepoint) external view returns (uint256 total) {
         uint256[] memory ids = ESCROW.tokensOfOwner(account);
-        for (uint256 i; i < ids.length; ++i) {
+        for (uint256 i = 0; i < ids.length; ++i) {
             total += ESCROW.balanceOfNFTAt(ids[i], timepoint);
         }
     }
