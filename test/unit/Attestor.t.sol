@@ -114,19 +114,19 @@ contract AttestorTest is Base {
         attestor.postRevenue(dapp, address(usdc), sourceEpoch, 1000e6, 0, "");
     }
 
-    /// @dev The reporter is an AccessControl role administered by the timelock, like every other
-    ///      role in the system: rotation is grant + revoke, and several reporters can coexist.
+    /// @dev The reporter role lives on `SystemAccess` for this attestor target; the timelock
+    ///      administers the hub. Rotation is grant + revoke; several reporters can coexist.
     function test_onlyTimelockAdministersTheReporterRole() public {
         bytes32 role = attestor.REPORTER_ROLE();
-        bytes32 admin = attestor.DEFAULT_ADMIN_ROLE();
+        bytes32 admin = access.DEFAULT_ADMIN_ROLE();
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, admin));
-        attestor.grantRole(role, alice);
+        access.grantRole(address(attestor), role, alice);
 
         vm.startPrank(timelock);
-        attestor.grantRole(role, bob);
-        attestor.revokeRole(role, reporter);
+        access.grantRole(address(attestor), role, bob);
+        access.revokeRole(address(attestor), role, reporter);
         vm.stopPrank();
 
         assertTrue(attestor.hasRole(role, bob));

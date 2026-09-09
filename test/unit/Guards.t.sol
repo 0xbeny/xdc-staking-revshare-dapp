@@ -45,10 +45,12 @@ contract GuardsTest is Base {
         vm.startPrank(alice);
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
         escrow.setOperator(address(0), true);
-        wxdc.approve(address(escrow), 1 ether);
+        vm.stopPrank();
+
+        deal(address(wxdc), address(zap), 1 ether);
+        vm.prank(address(zap));
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
         escrow.createLockFor(address(0), 1 ether, 4 weeks);
-        vm.stopPrank();
     }
 
     function test_escrow_increaseAmountRejectsZero() public {
@@ -101,9 +103,9 @@ contract GuardsTest is Base {
         vm.warp(block.timestamp + 300 weeks);
 
         vm.startPrank(bob);
-        wxdc.approve(address(escrow), 1 ether);
+        wxdc.approve(address(zap), 1 ether);
         vm.expectRevert(VotingEscrow.HistoryStale.selector);
-        escrow.createLock(1 ether, 4 weeks);
+        zap.lockWXDC(1 ether, 4 weeks);
         vm.stopPrank();
 
         escrow.checkpoint(); // 255 weeks
@@ -123,7 +125,7 @@ contract GuardsTest is Base {
         vm.expectRevert(FeeDistributor.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), abi.encodeCall(FeeDistributor.initialize, (address(0), address(registry))));
         vm.expectRevert(FeeDistributor.ZeroAddress.selector);
-        new ERC1967Proxy(address(impl), abi.encodeCall(FeeDistributor.initialize, (timelock, address(0))));
+        new ERC1967Proxy(address(impl), abi.encodeCall(FeeDistributor.initialize, (address(access), address(0))));
     }
 
     function test_distributor_adminZeroAddressGuards() public {
@@ -131,11 +133,12 @@ contract GuardsTest is Base {
         FeeDistributor fresh = FeeDistributor(
             address(
                 new ERC1967Proxy(
-                    address(impl), abi.encodeCall(FeeDistributor.initialize, (timelock, address(registry)))
+                    address(impl), abi.encodeCall(FeeDistributor.initialize, (address(access), address(registry)))
                 )
             )
         );
         vm.startPrank(timelock);
+        access.grantRole(address(fresh), fresh.DEFAULT_ADMIN_ROLE(), timelock);
         vm.expectRevert(FeeDistributor.ZeroAddress.selector);
         fresh.setEscrow(address(0));
         vm.expectRevert(FeeDistributor.ZeroAddress.selector);
@@ -296,13 +299,12 @@ contract GuardsTest is Base {
     function test_escrowRejectsFeeOnTransferDeposits() public {
         MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(1000); // 10% fee
         VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+        local.setDepositor(address(this));
 
-        fot.mint(alice, 10 ether);
-        vm.startPrank(alice);
+        fot.mint(address(this), 10 ether);
         fot.approve(address(local), 10 ether);
         vm.expectRevert(VotingEscrow.IncompleteTransfer.selector);
-        local.createLock(10 ether, 4 weeks);
-        vm.stopPrank();
+        local.createLockFor(alice, 10 ether, 4 weeks);
 
         assertEq(local.totalLocked(), 0);
         assertEq(fot.balanceOf(address(local)), 0);
@@ -311,17 +313,27 @@ contract GuardsTest is Base {
     function test_escrowRejectsFeeOnTransferIncreaseAmount() public {
         MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(0);
         VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+        local.setDepositor(address(this));
 
-        fot.mint(alice, 20 ether);
-        vm.startPrank(alice);
+        fot.mint(address(this), 20 ether);
         fot.approve(address(local), type(uint256).max);
-        uint256 tokenId = local.createLock(10 ether, 4 weeks);
+        uint256 tokenId = local.createLockFor(alice, 10 ether, 4 weeks);
+
         fot.setFeeBps(1000);
+        fot.mint(alice, 5 ether);
+        vm.startPrank(alice);
+        fot.approve(address(local), 5 ether);
         vm.expectRevert(VotingEscrow.IncompleteTransfer.selector);
         local.increaseAmount(tokenId, 5 ether);
         vm.stopPrank();
 
         assertEq(local.locked(tokenId).amount, 10 ether);
         assertEq(local.totalLocked(), 10 ether);
+    }
+
+    function test_setDepositorIsOneShot() public {
+        vm.expectRevert(VotingEscrow.DepositorAlreadySet.selector);
+        escrow.setDepositor(address(0xBEEF));
+        assertEq(escrow.depositor(), address(zap));
     }
 }

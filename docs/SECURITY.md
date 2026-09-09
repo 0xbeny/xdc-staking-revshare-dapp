@@ -12,14 +12,22 @@
 | **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
 | **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
 
-Every AccessControl role id lives in [`src/libraries/Roles.sol`](../src/libraries/Roles.sol), whose NatSpec carries the role → holder → contract → power matrix. `DEFAULT_ADMIN_ROLE` administers every role and is held by the timelock alone after deployment. The immutable escrow deliberately uses a single two-step-transferable `timelock` address instead of AccessControl: one privileged actor, clamped powers, nothing delegated.
+Every role id lives in [`src/libraries/Roles.sol`](../src/libraries/Roles.sol). Membership is
+stored once in immutable [`SystemAccess`](../src/SystemAccess.sol), keyed by **target contract**
+(`hasRole(target, role, account)`). Timelock holds the hub's `DEFAULT_ADMIN_ROLE` and is the only
+address that can grant/revoke. Consumers (`FeeDistributor`, `RevenueRegistry`, `Attestor`) keep
+convenience `hasRole(role, account)` views that read their own target slice. The immutable escrow
+deliberately does not use SystemAccess: it has exactly one privileged actor (`timelock`, two-step
+transferable) whose powers are clamped by constants.
 
 ## Principal safety
 
 - All principal is in `VotingEscrow`, which has no upgrade path, no owner and no `selfdestruct`.
 - The only functions that move principal out are `withdraw` (owner, after expiry) and
-  `emergencyExit` (owner, before expiry, at the immutable formula). Both read only escrow
-  storage and make no external call except the token transfers themselves.
+  `emergencyExit` (owner, before expiry, at the immutable formula). Both are gated by a
+  governance-tunable `withdrawalCooldown` (default 24h, max 7d); early-exit penalty is
+  snapshotted at request. Both read only escrow storage and make no external call except the
+  token transfers themselves on finalize.
 - Penalty destinations are `immutable`. Penalty parameters are clamped by `constant`s.
 - A paused or maliciously upgraded distributor cannot reach principal
   (`test_upgradedDistributorStillCannotMovePrincipal`, `test_guardianPauseNeverTouchesPrincipal`).

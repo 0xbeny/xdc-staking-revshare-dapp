@@ -90,8 +90,8 @@ contract ZapDepositorTest is Base {
         escrow.setMaxPenaltyBps(4000);
 
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 100 ether);
-        uint256 tokenId = escrow.createLock(100 ether, 52 weeks);
+        wxdc.approve(address(zap), 100 ether);
+        uint256 tokenId = zap.lockWXDC(100 ether, 52 weeks);
         vm.stopPrank();
 
         uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
@@ -136,6 +136,17 @@ contract ZapDepositorTest is Base {
     function test_constructorRejectsMismatchedEscrowToken() public {
         vm.expectRevert(ZapDepositor.EscrowTokenMismatch.selector);
         new ZapDepositor(address(usdc), address(escrow));
+    }
+
+    function test_lockWXDCCreatesLockOwnedByTheCaller() public {
+        vm.startPrank(alice);
+        wxdc.approve(address(zap), 50 ether);
+        uint256 tokenId = zap.lockWXDC(50 ether, 26 weeks);
+        vm.stopPrank();
+
+        assertEq(escrow.ownerOf(tokenId), alice);
+        assertEq(escrow.locked(tokenId).amount, 50 ether);
+        assertEq(wxdc.balanceOf(address(zap)), 0);
     }
 
     function test_zapHasNoOwnerOrSetters() public {

@@ -14,7 +14,7 @@ contract SystemInvariantsTest is Base {
         super.setUp();
         vm.warp(_epochStart(_currentEpoch() + 1));
 
-        handler = new Handler(escrow, distributor, pusher, wxdc, usdc, dapp, timelock, [alice, bob, carol]);
+        handler = new Handler(escrow, zap, distributor, pusher, wxdc, usdc, dapp, timelock, [alice, bob, carol]);
 
         bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = Handler.createLock.selector;

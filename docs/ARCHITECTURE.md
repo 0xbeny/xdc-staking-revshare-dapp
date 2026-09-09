@@ -7,11 +7,14 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 ```
                        ┌──────────────────────────────────────────────────────┐
                        │                    Governance                         │
-                       │   Timelock (admin, params)   Guardian (pause only)    │
+                       │   Timelock (admin)   Guardian (pause)   Keeper        │
+                       │              └──────────┬──────────────┘              │
+                       │                   SystemAccess                         │
+                       │            (immutable role hub, per target)            │
                        └───────────┬───────────────────────────┬──────────────┘
                                    │                           │
    native XDC ─▶ ZapDepositor ─▶ ┌─▼──────────────┐      ┌─────▼──────────────┐
-   WXDC ─────────────────────▶  │  VotingEscrow  │      │   FeeDistributor   │
+   WXDC ───────▶ ZapDepositor ─▶ │  VotingEscrow  │      │   FeeDistributor   │
                                 │  (immutable)   │◀────▶│   (UUPS proxy)     │
                                 │  veNFT + weight│ reads │  epochs · claims   │
                                 │  penalty rules │       │  bucket · carry    │
@@ -28,8 +31,9 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 
 | Contract | Mutability | Holds funds | Role |
 |---|---|---|---|
+| `SystemAccess` | immutable | never | central per-target role registry (ops/monitoring hub) |
 | `VotingEscrow` | immutable | **all principal** | soulbound veNFT, weight, penalty rules and parameters |
-| `ZapDepositor` | immutable | never | native XDC → WXDC → lock, in one tx |
+| `ZapDepositor` | immutable | never | **sole** mint path: native XDC or WXDC → `createLockFor` |
 | `FeeDistributor` | UUPS | revenue awaiting claim | weekly epoch accounting and claims |
 | `RevenueRegistry` | UUPS | never | which adapters may notify, and their terms |
 | `PushAdapter` (A) | immutable | never between calls | dApp pushes committed revenue |
@@ -56,7 +60,13 @@ arithmetic lives.
 
 ### Locking
 
-`createLockFor(beneficiary, amount, duration)`:
+`createLockFor(beneficiary, amount, duration)` — **only callable by the wired `depositor`
+(`ZapDepositor`)**. Users never call the escrow to mint; they enter through:
+
+- `zapCreateLock` / `zapCreateLockFor` — native XDC (wrap then mint)
+- `lockWXDC` / `lockWXDCFor` — already-wrapped WXDC (pull then mint)
+
+Rules inside `createLockFor`:
 
 1. `duration` must be a whole number of weeks in `[1, 104]`.
 2. `unlock = ceilWeek(now + duration)` — rounds **up**, so the effective lock is never shorter
@@ -69,10 +79,9 @@ arithmetic lives.
    `received != amount` the call reverts (`IncompleteTransfer`). This keeps
    `totalLocked == token.balanceOf(escrow)`.
 
-`increaseAmount(tokenId, amount)` is **permissionless** (Curve-style): anyone may add
-principal and thereby re-weight the position's grandfathered penalty cap. `ZapDepositor.zapIncreaseAmount`
-is owner-only because the zap is a consent UX for native XDC; compounding and third-party
-funding use the escrow path directly.
+`increaseAmount(tokenId, amount)` remains **permissionless** on the escrow (Curve-style /
+auto-compound). `ZapDepositor.zapIncreaseAmount` / `increaseAmountWXDC` are owner-only
+consent UX for topping up via the zap.
 
 ### Weight
 
@@ -124,6 +133,19 @@ including inside the clamped region.
   at or before `t` and recomputes the clamped formula. Historic weight can therefore never drift
   from the formula, and it survives the position being zeroed later.
 
+### Exit cooldown (mature `withdraw` and `emergencyExit`)
+
+Both exits are **two-phase** with a governance-tunable `withdrawalCooldown` (default **24 hours**,
+hard-capped at 7 days via `HARD_MAX_WITHDRAWAL_COOLDOWN`):
+
+1. **Request** — `requestWithdraw` / `requestEmergencyExit`, or the first call to
+   `withdraw` / `emergencyExit` when no request is pending. Early-exit penalty is
+   **snapshotted at request**. While a request is pending, amount/unlock increases revert.
+2. **Finalize** — after `requestedAt + withdrawalCooldown`, a subsequent `withdraw` /
+   `emergencyExit` (or the same call when cooldown is `0`) moves principal.
+
+`cancelExitRequest` clears a pending request with no funds moved.
+
 ### Penalty (`emergencyExit`)
 
 ```
@@ -138,7 +160,8 @@ toLockers  = penalty − toTreasury                 → transferred to the distr
 `maxPenaltyBps` and `penaltySplitBps` are storage variables settable only by the timelock,
 clamped by the immutable constants `HARD_MAX_PENALTY_BPS = 5000` and
 `HARD_MAX_PENALTY_SPLIT_BPS = 5000`. The two destinations are `immutable`. There is no
-PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers.
+PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers
+(after the cooldown finalize step).
 
 **Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance lowering
 the global cap helps everyone at once (`min`); raising it never reaches an existing position.
@@ -169,6 +192,13 @@ exit, and the `exitEpoch` recorded on the position caps what an exited position 
 `setOperator(operator, approved)` grants **only** the right to call `increaseUnlockTime`
 on the owner's positions. It is how a user lets the keeper run `keepAtMaxLock`. Operators can
 never withdraw, exit, transfer, or claim to a different address.
+
+## SystemAccess
+
+Immutable hub for periphery permissions. Roles are stored as
+`(target contract, role id, account)` so ops can answer “who can pause the distributor?”
+with one read and enumerate members via `getRoleMember*`. Timelock holds the hub admin
+role and is the only granter/revoker. `VotingEscrow` stays outside this hub.
 
 ## FeeDistributor
 

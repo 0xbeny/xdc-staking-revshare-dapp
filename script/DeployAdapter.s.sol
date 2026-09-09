@@ -17,8 +17,8 @@ import {Script, console2} from "forge-std/Script.sol";
 /// calldata for the timelock to execute.
 ///
 /// Required environment: DISTRIBUTOR, ADAPTER_MODE (A|B|B2|B3|C), DAPP, DAPP_TREASURY,
-/// COMMITTED_BPS, REWARD_TOKENS. Modes B2/B3 also require FEE_SAFE. Mode C requires TIMELOCK
-/// and REPORTER instead of the dApp fields.
+/// COMMITTED_BPS, REWARD_TOKENS. Modes B2/B3 also require FEE_SAFE. Mode C requires
+/// SYSTEM_ACCESS and REPORTER (then a timelock `grantRole` on SystemAccess).
 contract DeployAdapter is Script {
     error UnknownMode(string mode);
     error FeeSafeRequired();
@@ -79,7 +79,7 @@ contract DeployAdapter is Script {
             );
             registryMode = IRevenueRegistry.Mode.ZODIAC_SAFE;
         } else if (_eq(mode, "C")) {
-            adapter = address(new Attestor(distributor, vm.envAddress("TIMELOCK"), vm.envAddress("REPORTER")));
+            adapter = address(new Attestor(distributor, vm.envAddress("SYSTEM_ACCESS")));
             registryMode = IRevenueRegistry.Mode.ATTESTATION;
         } else {
             revert UnknownMode(mode);
@@ -101,6 +101,19 @@ contract DeployAdapter is Script {
                 vm.envOr("TERMS_HASH", bytes32(0))
             )
         );
+
+        if (registryMode == IRevenueRegistry.Mode.ATTESTATION) {
+            console2.log("");
+            console2.log("Mode C: timelock must grant REPORTER on SystemAccess for this attestor:");
+            console2.logBytes(
+                abi.encodeWithSignature(
+                    "grantRole(address,bytes32,address)",
+                    adapter,
+                    keccak256("REPORTER_ROLE"),
+                    vm.envAddress("REPORTER")
+                )
+            );
+        }
 
         if (registryMode == IRevenueRegistry.Mode.PULL_SAFE) {
             console2.log("");

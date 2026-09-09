@@ -81,9 +81,26 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     uint256 public constant HARD_MAX_PENALTY_BPS = 5000;
     /// @notice Hard ceiling on the treasury share of a forfeiture. Immutable.
     uint256 public constant HARD_MAX_PENALTY_SPLIT_BPS = 5000;
+    /// @notice Hard ceiling on the exit cooldown (request → finalize). Immutable.
+    uint256 public constant HARD_MAX_WITHDRAWAL_COOLDOWN = 7 days;
 
     /// @notice Upper bound on weeks traversed by a single checkpoint pass (~4.9 years).
     uint256 private constant MAX_WEEK_STEPS = 255;
+
+    enum ExitKind {
+        None,
+        Withdraw,
+        Emergency
+    }
+
+    struct ExitRequest {
+        uint64 requestedAt;
+        ExitKind kind;
+        uint128 returned;
+        uint128 toLockers;
+        uint128 toTreasury;
+        uint64 penaltyBps;
+    }
 
     /*//////////////////////////////////////////////////////////////
                             IMMUTABLE WIRING
@@ -103,10 +120,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     address public timelock;
     address public pendingTimelock;
 
+    /// @notice Sole contract allowed to mint locks (`ZapDepositor`). One-shot after deploy.
+    address public depositor;
+
     /// @notice Tunable within [0, HARD_MAX_PENALTY_BPS].
     uint256 public maxPenaltyBps;
     /// @notice Treasury share of a forfeiture, tunable within [0, HARD_MAX_PENALTY_SPLIT_BPS].
     uint256 public penaltySplitBps;
+    /// @notice Delay between exit request and finalize. Tunable within [0, HARD_MAX_WITHDRAWAL_COOLDOWN].
+    /// @dev Default 24 hours. Both mature withdraw and emergency exit use this cooldown.
+    uint256 public withdrawalCooldown;
 
     uint256 public totalLocked;
     uint256 private _nextTokenId = 1;
@@ -122,6 +145,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     mapping(uint256 tokenId => uint256) public firstEligibleEpoch;
     mapping(uint256 tokenId => uint256) public exitEpoch;
     mapping(uint256 tokenId => bool) public closed;
+    mapping(uint256 tokenId => ExitRequest) public exitRequest;
 
     /// @notice Sum of the epoch-start weights of every position that exited during an epoch.
     mapping(uint256 epoch => uint256) public exitedWeightByEpoch;
@@ -163,6 +187,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     event Deposit(uint256 indexed tokenId, address indexed provider, uint256 amount, uint256 unlockTime);
+    event DepositorSet(address indexed depositor);
     event LockExtended(uint256 indexed tokenId, uint256 oldUnlock, uint256 newUnlock);
     event Withdraw(uint256 indexed tokenId, address indexed to, uint256 amount);
     event EmergencyExit(
@@ -174,6 +199,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 toTreasury,
         uint256 penaltyBps
     );
+    event ExitRequested(uint256 indexed tokenId, ExitKind kind, uint256 readyAt);
+    event ExitRequestCancelled(uint256 indexed tokenId);
+    event WithdrawalCooldownSet(uint256 oldValue, uint256 newValue);
     event PenaltyCapUpdated(uint256 indexed tokenId, uint256 oldCap, uint256 newCap);
     event GlobalCheckpoint(uint256 indexed epochIndex, int128 bias, int128 slope, uint256 ts);
     event MaxPenaltyBpsSet(uint256 oldValue, uint256 newValue);
@@ -189,6 +217,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     error NotTimelock();
     error NotAuthorized();
+    error NotDepositor();
+    error DepositorAlreadySet();
     error ZeroAddress();
     error ZeroAmount();
     error IncompleteTransfer();
@@ -203,6 +233,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error ParameterOutOfRange();
     error Soulbound();
     error HistoryStale();
+    error ExitPending();
+    error NoExitRequest();
+    error WrongExitKind();
+    error CooldownActive(uint256 readyAt);
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -228,6 +262,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         timelock = timelock_;
         maxPenaltyBps = maxPenaltyBps_;
         penaltySplitBps = penaltySplitBps_;
+        withdrawalCooldown = 1 days;
 
         pointHistory[0] = GlobalPoint({bias: 0, slope: 0, ts: block.timestamp.toUint64()});
     }
@@ -267,6 +302,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         emit PenaltySplitBpsSet(oldValue, newValue);
     }
 
+    /// @notice Sets the request→finalize delay for both withdraw and emergency exit.
+    function setWithdrawalCooldown(uint256 newValue) external onlyTimelock {
+        if (newValue > HARD_MAX_WITHDRAWAL_COOLDOWN) {
+            revert ParameterOutOfRange();
+        }
+        uint256 oldValue = withdrawalCooldown;
+        withdrawalCooldown = newValue;
+        emit WithdrawalCooldownSet(oldValue, newValue);
+    }
+
     /// @notice Contract eligibility. EOAs are never listed; contracts need CUSTODIAN or WRAPPER.
     function setTier(address account, Tier tier) external onlyTimelock {
         if (account == address(0)) {
@@ -274,6 +319,21 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         tierOf[account] = tier;
         emit TierSet(account, tier);
+    }
+
+    /// @notice Wires the sole lock-minting contract (`ZapDepositor`). One-shot; called at deploy.
+    /// @dev Until this is set, no locks can be minted. Intentionally not timelock-gated so the
+    ///      deployer can complete wiring in the same broadcast as construction; afterwards it
+    ///      cannot be changed (same posture as `FeeDistributor.setEscrow`).
+    function setDepositor(address depositor_) external {
+        if (depositor_ == address(0)) {
+            revert ZeroAddress();
+        }
+        if (depositor != address(0)) {
+            revert DepositorAlreadySet();
+        }
+        depositor = depositor_;
+        emit DepositorSet(depositor_);
     }
 
     function transferTimelock(address newTimelock) external onlyTimelock {
@@ -612,20 +672,20 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /*//////////////////////////////////////////////////////////////
-                                LOCKING
+                                 LOCKING
     //////////////////////////////////////////////////////////////*/
 
-    function createLock(uint256 amount, uint256 duration) external returns (uint256) {
-        return createLockFor(_msgSender(), amount, duration);
-    }
-
-    /// @notice Creates a soulbound position for `beneficiary`, funded by `_msgSender()`.
-    /// @dev Eligibility is checked against the beneficiary, never the funder (spec §3.1).
+    /// @notice Creates a soulbound position for `beneficiary`, funded by the depositor (`ZapDepositor`).
+    /// @dev Only the wired `depositor` may mint. Users enter via Zap (native XDC or WXDC); eligibility
+    ///      is checked against the beneficiary, never the funder (spec §3.1).
     function createLockFor(address beneficiary, uint256 amount, uint256 duration)
         public
         nonReentrant
         returns (uint256 tokenId)
     {
+        if (_msgSender() != depositor) {
+            revert NotDepositor();
+        }
         if (beneficiary == address(0)) {
             revert ZeroAddress();
         }
@@ -675,6 +735,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (amount == 0) {
             revert ZeroAmount();
         }
+        _requireNoExitRequest(tokenId);
         (, Lock memory oldLock) = _openLockOf(tokenId);
         if (oldLock.end <= block.timestamp) {
             revert LockExpired();
@@ -708,6 +769,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Extends a lock. Never changes the position's penalty cap (spec §3.4).
     /// @param newUnlock Absolute timestamp; rounded UP to the next week boundary.
     function increaseUnlockTime(uint256 tokenId, uint256 newUnlock) public nonReentrant {
+        _requireNoExitRequest(tokenId);
         (address owner, Lock memory oldLock) = _openLockOf(tokenId);
         if (_msgSender() != owner && !_operators[owner][_msgSender()]) {
             revert NotAuthorized();
@@ -740,8 +802,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
                           EXIT PATHS (PRINCIPAL)
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Full principal after expiry. Unconditional under any periphery state.
-    function withdraw(uint256 tokenId) external nonReentrant {
+    /// @notice Starts a mature withdraw. Funds move only after `withdrawalCooldown` via `withdraw`.
+    function requestWithdraw(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
             revert NotAuthorized();
@@ -749,8 +811,87 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (lock.end > block.timestamp) {
             revert LockNotExpired();
         }
+        if (exitRequest[tokenId].kind != ExitKind.None) {
+            revert ExitPending();
+        }
+
+        exitRequest[tokenId] =
+            ExitRequest({requestedAt: block.timestamp.toUint64(), kind: ExitKind.Withdraw, returned: 0, toLockers: 0, toTreasury: 0, penaltyBps: 0});
+        emit ExitRequested(tokenId, ExitKind.Withdraw, block.timestamp + withdrawalCooldown);
+    }
+
+    /// @notice Starts an early exit. Penalty is snapshotted now; funds move after cooldown via `emergencyExit`.
+    function requestEmergencyExit(uint256 tokenId) external nonReentrant {
+        (address owner, Lock memory lock) = _openLockOf(tokenId);
+        if (_msgSender() != owner) {
+            revert NotAuthorized();
+        }
+        if (lock.end <= block.timestamp) {
+            revert LockNotExpired();
+        }
+        if (exitRequest[tokenId].kind != ExitKind.None) {
+            revert ExitPending();
+        }
+
+        ExitQuote memory q = _quoteExit(lock);
+        exitRequest[tokenId] = ExitRequest({
+            requestedAt: block.timestamp.toUint64(),
+            kind: ExitKind.Emergency,
+            returned: q.returned.toUint128(),
+            toLockers: q.toLockers.toUint128(),
+            toTreasury: q.toTreasury.toUint128(),
+            penaltyBps: q.penaltyBps.toUint64()
+        });
+        emit ExitRequested(tokenId, ExitKind.Emergency, block.timestamp + withdrawalCooldown);
+    }
+
+    /// @notice Cancels a pending exit request. Lock terms are unchanged.
+    function cancelExitRequest(uint256 tokenId) external nonReentrant {
+        (address owner,) = _openLockOf(tokenId);
+        if (_msgSender() != owner) {
+            revert NotAuthorized();
+        }
+        if (exitRequest[tokenId].kind == ExitKind.None) {
+            revert NoExitRequest();
+        }
+        delete exitRequest[tokenId];
+        emit ExitRequestCancelled(tokenId);
+    }
+
+    /// @notice Mature withdraw. First call (or explicit `requestWithdraw`) arms the exit; after
+    ///         `withdrawalCooldown` a subsequent call (or the same call when cooldown is 0) pays out.
+    function withdraw(uint256 tokenId) external nonReentrant {
+        (address owner, Lock memory lock) = _openLockOf(tokenId);
+        if (_msgSender() != owner) {
+            revert NotAuthorized();
+        }
+
+        ExitRequest memory req = exitRequest[tokenId];
+        if (req.kind == ExitKind.None) {
+            if (lock.end > block.timestamp) {
+                revert LockNotExpired();
+            }
+            exitRequest[tokenId] = ExitRequest({
+                requestedAt: block.timestamp.toUint64(),
+                kind: ExitKind.Withdraw,
+                returned: 0,
+                toLockers: 0,
+                toTreasury: 0,
+                penaltyBps: 0
+            });
+            emit ExitRequested(tokenId, ExitKind.Withdraw, block.timestamp + withdrawalCooldown);
+            if (withdrawalCooldown != 0) {
+                return;
+            }
+            req = exitRequest[tokenId];
+        } else if (req.kind != ExitKind.Withdraw) {
+            revert WrongExitKind();
+        }
+
+        _requireCooldownElapsed(req.requestedAt);
 
         uint256 amount = lock.amount;
+        delete exitRequest[tokenId];
         _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
         closed[tokenId] = true;
         totalLocked -= amount;
@@ -759,42 +900,76 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         emit Withdraw(tokenId, owner, amount);
     }
 
-    /// @notice Early exit against a penalty. Reads only escrow storage — no external call for
-    ///         parameters or logic, so it cannot be bricked by any other contract (spec §2).
+    /// @notice Early exit. First call snapshots the penalty and arms the cooldown; after
+    ///         `withdrawalCooldown` a subsequent call (or the same call when cooldown is 0) pays out.
     function emergencyExit(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
             revert NotAuthorized();
         }
-        if (lock.end <= block.timestamp) {
-            revert LockNotExpired();
+
+        ExitRequest memory req = exitRequest[tokenId];
+        if (req.kind == ExitKind.None) {
+            if (lock.end <= block.timestamp) {
+                revert LockNotExpired();
+            }
+            ExitQuote memory q = _quoteExit(lock);
+            exitRequest[tokenId] = ExitRequest({
+                requestedAt: block.timestamp.toUint64(),
+                kind: ExitKind.Emergency,
+                returned: q.returned.toUint128(),
+                toLockers: q.toLockers.toUint128(),
+                toTreasury: q.toTreasury.toUint128(),
+                penaltyBps: q.penaltyBps.toUint64()
+            });
+            emit ExitRequested(tokenId, ExitKind.Emergency, block.timestamp + withdrawalCooldown);
+            if (withdrawalCooldown != 0) {
+                return;
+            }
+            req = exitRequest[tokenId];
+        } else if (req.kind != ExitKind.Emergency) {
+            revert WrongExitKind();
         }
 
-        ExitQuote memory q = _quoteExit(lock);
+        _requireCooldownElapsed(req.requestedAt);
 
+        uint256 returned = req.returned;
+        uint256 toLockers = req.toLockers;
+        uint256 toTreasury = req.toTreasury;
+        uint256 penaltyBps = req.penaltyBps;
+        uint256 penalty = toLockers + toTreasury;
+
+        delete exitRequest[tokenId];
         _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
-        // Recorded *after* the rewrite so the figure is read from exactly the state the
-        // distributor will later read. If the position was created and exited inside the same
-        // block as the epoch boundary, the rewrite overwrites its snapshot point and the global
-        // point alike, so it is absent from both the numerator and the denominator and nothing
-        // is forfeited. Reading before the rewrite would record a weight the snapshot no longer
-        // contains, letting the forfeited slice exceed the epoch's pot.
         _recordExit(tokenId);
         closed[tokenId] = true;
         totalLocked -= lock.amount;
 
         IERC20 erc20 = IERC20(token);
-        if (q.returned > 0) {
-            erc20.safeTransfer(owner, q.returned);
+        if (returned > 0) {
+            erc20.safeTransfer(owner, returned);
         }
-        if (q.toLockers > 0) {
-            erc20.safeTransfer(distributor, q.toLockers);
+        if (toLockers > 0) {
+            erc20.safeTransfer(distributor, toLockers);
         }
-        if (q.toTreasury > 0) {
-            erc20.safeTransfer(treasury, q.toTreasury);
+        if (toTreasury > 0) {
+            erc20.safeTransfer(treasury, toTreasury);
         }
 
-        emit EmergencyExit(tokenId, owner, q.returned, q.penalty, q.toLockers, q.toTreasury, q.penaltyBps);
+        emit EmergencyExit(tokenId, owner, returned, penalty, toLockers, toTreasury, penaltyBps);
+    }
+
+    function _requireCooldownElapsed(uint64 requestedAt) private view {
+        uint256 readyAt = uint256(requestedAt) + withdrawalCooldown;
+        if (block.timestamp < readyAt) {
+            revert CooldownActive(readyAt);
+        }
+    }
+
+    function _requireNoExitRequest(uint256 tokenId) private view {
+        if (exitRequest[tokenId].kind != ExitKind.None) {
+            revert ExitPending();
+        }
     }
 
     /// @dev The in-progress epoch share is forfeited: record the snapshot weight this position

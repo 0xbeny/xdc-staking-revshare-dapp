@@ -13,14 +13,16 @@ Implements [`veXDC Staking — v1 Architecture Specification`, draft v0.5](docs/
 
 ```
 src/
+  SystemAccess.sol            immutable · central per-target roles (ops/monitoring hub)
   VotingEscrow.sol            immutable · soulbound veNFT, weight, penalty rules + params
   FeeDistributor.sol          UUPS      · weekly epochs, bounded claims, forfeiture, carry-forward
   RevenueRegistry.sol         UUPS      · adapter whitelist + terms (metadata only, no custody)
-  ZapDepositor.sol            immutable · native XDC → lock in one tx
+  ZapDepositor.sol            immutable · sole mint path (native XDC or WXDC → veNFT)
   adapters/                   immutable · PushAdapter (A) · FeeSplitter (B) · PullAdapter (B2)
                                           ZodiacFeeModule (B3) · Attestor (C)
   governance/VeVotesAdapter   immutable · read-only IVotes over ve weight
   libraries/EpochTime.sol               · week-aligned epoch arithmetic
+  libraries/Roles.sol                   · role id constants (membership lives in SystemAccess)
 script/
   VeXDCDeployer.sol           the wiring, shared by the deploy script and the test harness
   Deploy.s.sol                full system deploy + governance hand-over + self-verification

@@ -21,13 +21,13 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 ```
         Governance (Multisig → Timelock) — periphery config + escrow params within immutable clamps
                            │
-   User ──XDC───▶ ZapDepositor ──create_lock_for──▶ ┌──────────────────────┐
-                                                    │  VotingEscrow        │
-                                                    │  soulbound veXDC NFT │
-                                                    │  penalty formula,    │
-                                                    │  params, clamps and  │
-                                                    │  destinations INSIDE │
-                                                    └───────┬──────────────┘
+   User ──XDC / WXDC───▶ ZapDepositor ──create_lock_for──▶ ┌──────────────────────┐
+                                                          │  VotingEscrow        │
+                                                          │  soulbound veXDC NFT │
+                                                          │  penalty formula,    │
+                                                          │  params, clamps and  │
+                                                          │  destinations INSIDE │
+                                                          └───────┬──────────────┘
                                                             │ snapshots · penalties
                                                     ┌───────▼──────────┐
     Immutable revenue adapters ──notifyRevenue──▶   │  FeeDistributor  │◀─ forfeiture bucket
@@ -46,11 +46,15 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 ### 3.1 VotingEscrow — immutable
 
 **Locking:**
-- WXDC direct, or native XDC via `ZapDepositor` → `create_lock_for(beneficiary, ...)`; eligibility checked against the beneficiary.
+- WXDC or native XDC **only via `ZapDepositor`** → `create_lock_for(beneficiary, ...)`; the escrow rejects every other mint caller. Eligibility is checked against the beneficiary.
 - `duration % 1 weeks == 0`, `MIN_LOCK ≤ duration ≤ MAX_LOCK`. Unlock **rounds UP** to the next week boundary; `require(effective ≥ MIN_LOCK)`.
 - **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. **Weight uses the truncated slope** `weight = (amount / MAX_LOCK) × effectiveTime` so Σ positions == `totalSupply` to the wei (dust locks with `amount < MAX_LOCK` have zero weight). Penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
 - `increase_amount(tokenId, amount)` is **permissionless** (anyone may fund a position; the cap re-weights). `increase_unlock_time(tokenId, newUnlock)` is owner-or-operator only (same round-up + clamp). `ZapDepositor.zapIncreaseAmount` is owner-only as a native-XDC consent UX; auto-compound uses the escrow path.
-- `withdraw(tokenId)` after expiry: full principal, unconditional under any periphery state.
+- `withdraw(tokenId)` after expiry and `emergencyExit(tokenId)` before expiry: both are two-phase
+  with a timelock-tunable `withdrawalCooldown` (default 24h, hard max 7d). First call (or
+  `requestWithdraw` / `requestEmergencyExit`) arms the exit; after the delay, a subsequent call
+  pays out. Early-exit penalty is snapshotted at request. `cancelExitRequest` aborts with no
+  funds moved. When cooldown is `0`, a single call still completes.
 - **No split, no merge (#2).** Multiple maturities = multiple positions. This deletes checkpoint lineage, reward-debt migration, forced-settlement plumbing, and the mid-epoch entitlement-migration problem from the immutable core entirely.
 
 **Soulbound (#9 — Option B):** `transferFrom`/`safeTransferFrom` revert unconditionally. **There is no `wrapInto` and no transfer carve-out of any kind.** The future stveXDC wrapper accepts only new WXDC deposits; existing veNFT positions are never wrappable. Migration path for existing lockers is natural: every position expires within ≤ 104 weeks, after which the holder can withdraw and re-deposit into the wrapper if they prefer the liquid lane. This keeps v1's escrow free of any underspecified future-module code.

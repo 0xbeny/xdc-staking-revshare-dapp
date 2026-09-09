@@ -8,9 +8,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 
 /// @title ZapDepositor
-/// @notice Immutable helper that turns native XDC into a veXDC position in one transaction.
+/// @notice Sole entrypoint for minting veNFT locks. Wraps native XDC or forwards WXDC, then
+///         calls `VotingEscrow.createLockFor`. The escrow rejects every other caller.
 ///
-/// @dev The depositor is always `_msgSender()`: the account whose XDC is wrapped and the
+/// @dev The depositor is always `_msgSender()`: the account whose XDC/WXDC funds the lock and the
 ///      account recorded in every event. Holds no funds between calls and has no owner, no
 ///      setter, no `receive()` and no upgrade path — stray XDC sent here reverts.
 ///
@@ -63,6 +64,19 @@ contract ZapDepositor is Context {
         return _zapCreateLock(beneficiary, duration);
     }
 
+    /// @notice Pulls WXDC from the caller and creates a lock owned by the caller.
+    function lockWXDC(uint256 amount, uint256 duration) external returns (uint256 tokenId) {
+        return _lockWXDC(_msgSender(), amount, duration);
+    }
+
+    /// @notice Pulls WXDC from the caller and creates a lock owned by `beneficiary`.
+    function lockWXDCFor(address beneficiary, uint256 amount, uint256 duration) external returns (uint256 tokenId) {
+        if (beneficiary == address(0)) {
+            revert ZeroAddress();
+        }
+        return _lockWXDC(beneficiary, amount, duration);
+    }
+
     /// @notice Wraps `msg.value` and adds it to a position the caller owns.
     /// @dev Owner-only on purpose: adding principal re-weights the position's grandfathered
     ///      penalty cap (spec §3.4), and only the owner can consent to that.
@@ -78,6 +92,19 @@ contract ZapDepositor is Context {
         emit ZapIncreased(_msgSender(), tokenId, msg.value);
     }
 
+    /// @notice Pulls WXDC from the caller and adds it to a position the caller owns.
+    function increaseAmountWXDC(uint256 tokenId, uint256 amount) external {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        if (ESCROW.ownerOf(tokenId) != _msgSender()) {
+            revert NotPositionOwner();
+        }
+        IERC20(address(WXDC)).safeTransferFrom(_msgSender(), address(this), amount);
+        ESCROW.increaseAmount(tokenId, amount);
+        emit ZapIncreased(_msgSender(), tokenId, amount);
+    }
+
     function _zapCreateLock(address beneficiary, uint256 duration) private returns (uint256 tokenId) {
         if (msg.value == 0) {
             revert ZeroAmount();
@@ -85,5 +112,14 @@ contract ZapDepositor is Context {
         WXDC.deposit{value: msg.value}();
         tokenId = ESCROW.createLockFor(beneficiary, msg.value, duration);
         emit Zapped(_msgSender(), beneficiary, tokenId, msg.value, duration);
+    }
+
+    function _lockWXDC(address beneficiary, uint256 amount, uint256 duration) private returns (uint256 tokenId) {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        IERC20(address(WXDC)).safeTransferFrom(_msgSender(), address(this), amount);
+        tokenId = ESCROW.createLockFor(beneficiary, amount, duration);
+        emit Zapped(_msgSender(), beneficiary, tokenId, amount, duration);
     }
 }

@@ -3,11 +3,11 @@ pragma solidity 0.8.28;
 
 import {IFeeDistributor} from "./interfaces/IFeeDistributor.sol";
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
+import {ISystemAccess} from "./interfaces/ISystemAccess.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
 import {Constants} from "./libraries/Constants.sol";
 import {EpochTime} from "./libraries/EpochTime.sol";
 import {Roles} from "./libraries/Roles.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -36,19 +36,14 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///    share. Settlement moves exactly `pot * exitedWeight / supply` into the *next* epoch's pot
 ///    without ever modifying the exited epoch's denominator, so an exiting position can never
 ///    receive its own forfeiture.
-contract FeeDistributor is
-    IFeeDistributor,
-    AccessControlUpgradeable,
-    PausableUpgradeable,
-    ReentrancyGuardUpgradeable,
-    UUPSUpgradeable
-{
+contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuardUpgradeable, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
+    bytes32 public constant DEFAULT_ADMIN_ROLE = Roles.DEFAULT_ADMIN;
     bytes32 public constant UPGRADER_ROLE = Roles.UPGRADER;
     bytes32 public constant PAUSER_ROLE = Roles.PAUSER;
     bytes32 public constant KEEPER_ROLE = Roles.KEEPER;
@@ -63,6 +58,8 @@ contract FeeDistributor is
                                  STORAGE
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Central role registry. Roles for this proxy are keyed by `address(this)`.
+    ISystemAccess public authority;
     IVotingEscrow public escrow;
     IRevenueRegistry public registry;
 
@@ -152,26 +149,27 @@ contract FeeDistributor is
         _disableInitializers();
     }
 
-    function initialize(address admin, address registry_) external initializer {
-        if (admin == address(0) || registry_ == address(0)) {
+    function initialize(address authority_, address registry_) external initializer {
+        if (authority_ == address(0) || registry_ == address(0)) {
             revert ZeroAddress();
         }
-        __AccessControl_init();
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(UPGRADER_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
-
+        authority = ISystemAccess(authority_);
         registry = IRevenueRegistry(registry_);
         startEpoch = EpochTime.currentEpoch();
     }
 
+    /// @dev Convenience view: same shape as AccessControl, reads from `SystemAccess`.
+    function hasRole(bytes32 role, address account) external view returns (bool) {
+        return authority.hasRole(address(this), role, account);
+    }
+
     /// @dev The escrow is deployed after this proxy (it needs the distributor as an immutable
     ///      penalty destination), so it is wired in exactly once, by the admin, post-deploy.
-    function setEscrow(address escrow_) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setEscrow(address escrow_) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (escrow_ == address(0)) {
             revert ZeroAddress();
         }
@@ -182,13 +180,13 @@ contract FeeDistributor is
         emit EscrowSet(escrow_);
     }
 
-    function _authorizeUpgrade(address) internal override onlyRole(UPGRADER_ROLE) {}
+    function _authorizeUpgrade(address) internal override onlyAuthorityRole(UPGRADER_ROLE) {}
 
     /*//////////////////////////////////////////////////////////////
                               ADMIN / GUARD
     //////////////////////////////////////////////////////////////*/
 
-    function addRewardToken(address token) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addRewardToken(address token) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (token == address(0)) {
             revert ZeroAddress();
         }
@@ -204,7 +202,7 @@ contract FeeDistributor is
 
     /// @dev Stops *new* revenue for a token. Already-notified revenue stays fully claimable —
     ///      there is no path that strands or reclaims it.
-    function setAcceptingRevenue(address token, bool accepting) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAcceptingRevenue(address token, bool accepting) external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         if (!isRewardToken[token]) {
             revert UnknownRewardToken();
         }
@@ -212,12 +210,17 @@ contract FeeDistributor is
         emit RewardTokenAccepting(token, accepting);
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
+    function pause() external onlyAuthorityRole(PAUSER_ROLE) {
         _pause();
     }
 
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function unpause() external onlyAuthorityRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
+    }
+
+    modifier onlyAuthorityRole(bytes32 role) {
+        authority.checkRole(address(this), role, _msgSender());
+        _;
     }
 
     function rewardTokens() external view returns (address[] memory) {
@@ -404,7 +407,7 @@ contract FeeDistributor is
         if (caller == owner || escrow.isOperator(owner, caller)) {
             return true;
         }
-        return autoCompound[tokenId] && hasRole(KEEPER_ROLE, caller);
+        return autoCompound[tokenId] && authority.hasRole(address(this), KEEPER_ROLE, caller);
     }
 
     function _compound(uint256 tokenId) internal returns (uint256 amount) {
@@ -555,7 +558,7 @@ contract FeeDistributor is
     ///         snapshot sees full weight. A missed window is never retroactively corrected.
     function batchKeepAtMaxLock(uint256[] calldata tokenIds, uint256 expectedEpoch)
         external
-        onlyRole(KEEPER_ROLE)
+        onlyAuthorityRole(KEEPER_ROLE)
         whenNotPaused
     {
         uint256 current = EpochTime.currentEpoch();
@@ -585,7 +588,7 @@ contract FeeDistributor is
     function batchCompound(uint256[] calldata tokenIds, uint256 expectedEpoch)
         external
         nonReentrant
-        onlyRole(KEEPER_ROLE)
+        onlyAuthorityRole(KEEPER_ROLE)
         whenNotPaused
     {
         if (EpochTime.currentEpoch() != expectedEpoch) {

@@ -72,6 +72,7 @@ contract Deploy is Script {
 
     function _report(VeXDCDeployer.Deployment memory d, VeXDCDeployer.Config memory config) internal pure {
         console2.log("=== veXDC v1 deployed ===");
+        console2.log("SystemAccess          ", address(d.access));
         console2.log("VotingEscrow          ", address(d.escrow));
         console2.log("FeeDistributor (proxy)", address(d.distributor));
         console2.log("FeeDistributor  (impl)", d.distributorImpl);
@@ -92,6 +93,7 @@ contract Deploy is Script {
         string memory key = "deployment";
         vm.serializeUint(key, "chainId", block.chainid);
         vm.serializeUint(key, "deployedAt", block.timestamp);
+        vm.serializeAddress(key, "systemAccess", address(d.access));
         vm.serializeAddress(key, "votingEscrow", address(d.escrow));
         vm.serializeAddress(key, "feeDistributor", address(d.distributor));
         vm.serializeAddress(key, "feeDistributorImpl", d.distributorImpl);

@@ -2,13 +2,14 @@
 pragma solidity 0.8.28;
 
 import {IFeeDistributor} from "../interfaces/IFeeDistributor.sol";
+import {ISystemAccess} from "../interfaces/ISystemAccess.sol";
 import {EpochTime} from "../libraries/EpochTime.sol";
 import {Roles} from "../libraries/Roles.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 
 /// @title Attestor
 /// @notice Mode C — atomic epoch attestation (§3.2 #6).
@@ -23,7 +24,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 ///
 ///      `sourceEpoch` is metadata for dashboards and reconciliation. `distributionEpoch` is
 ///      assigned at receipt and can never be chosen by the reporter (§3.2 #8).
-contract Attestor is AccessControl, ReentrancyGuard {
+contract Attestor is Context, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -42,6 +43,7 @@ contract Attestor is AccessControl, ReentrancyGuard {
     bytes32 public constant REPORTER_ROLE = Roles.REPORTER;
 
     address public immutable DISTRIBUTOR;
+    ISystemAccess public immutable AUTHORITY;
 
     mapping(bytes32 key => Record) private _records;
     mapping(bytes32 key => bool) public posted;
@@ -63,14 +65,17 @@ contract Attestor is AccessControl, ReentrancyGuard {
     error SourceEpochNotClosed();
     error NegativeNet();
 
-    /// @param admin The timelock. Grants and revokes `REPORTER_ROLE`; nothing else is mutable.
-    constructor(address distributor_, address admin, address reporter_) {
-        if (distributor_ == address(0) || admin == address(0) || reporter_ == address(0)) {
+    /// @param authority_ `SystemAccess` hub. `REPORTER_ROLE` for this contract is granted there.
+    constructor(address distributor_, address authority_) {
+        if (distributor_ == address(0) || authority_ == address(0)) {
             revert ZeroAddress();
         }
         DISTRIBUTOR = distributor_;
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(REPORTER_ROLE, reporter_);
+        AUTHORITY = ISystemAccess(authority_);
+    }
+
+    function hasRole(bytes32 role, address account) external view returns (bool) {
+        return AUTHORITY.hasRole(address(this), role, account);
     }
 
     function key(address dapp, address token, uint64 sourceEpoch) public pure returns (bytes32) {
@@ -90,7 +95,8 @@ contract Attestor is AccessControl, ReentrancyGuard {
         uint256 gross,
         int256 adjustment,
         bytes32 metadataHash
-    ) external onlyRole(REPORTER_ROLE) nonReentrant returns (uint256 net) {
+    ) external nonReentrant returns (uint256 net) {
+        AUTHORITY.checkRole(address(this), REPORTER_ROLE, _msgSender());
         if (dapp == address(0)) {
             revert ZeroAddress();
         }
