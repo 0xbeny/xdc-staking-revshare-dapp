@@ -334,8 +334,9 @@ contract FeeDistributor is AccessControlUpgradeable, PausableUpgradeable, Reentr
         }
         uint256 start = EpochTime.startOfEpoch(epoch);
         supply = escrow.totalSupplyAtWeek(start);
-        if (start <= block.timestamp) {
-            // A past week boundary is immutable, so it is safe to memoize.
+        if (start < block.timestamp) {
+            // Strictly past: the boundary value can no longer change, so it is safe to memoize.
+            // A boundary equal to `block.timestamp` is still open to locks later in this block.
             epochSupply[epoch] = supply;
             epochSupplyCached[epoch] = true;
         }

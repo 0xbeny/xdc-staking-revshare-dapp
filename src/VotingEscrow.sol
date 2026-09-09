@@ -391,7 +391,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             }
             pointHistory[epoch_] = GlobalPoint({bias: bias, slope: slope, ts: t.toUint64()});
 
-            if (t == ti) {
+            // Only memoize a boundary that is strictly in the past. A boundary equal to
+            // `block.timestamp` is still mutable: a lock created later in the same block would
+            // count towards `balanceOfNFTAt` but be missing from a value frozen here, which
+            // would desynchronise the distributor's numerator from its denominator.
+            if (t == ti && ti < block.timestamp) {
                 // `bias` is clamped to >= 0 above, so the cast cannot wrap.
                 // forge-lint: disable-next-line(unsafe-typecast)
                 _weekSupply[ti] = uint256(uint128(bias));
@@ -736,8 +740,14 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         (uint256 returned, uint256 penalty, uint256 penaltyBps) = _quoteExit(lock);
         uint256 toTreasury = (penalty * penaltySplitBps) / BPS;
 
-        _recordExit(tokenId);
         _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        // Recorded *after* the rewrite so the figure is read from exactly the state the
+        // distributor will later read. If the position was created and exited inside the same
+        // block as the epoch boundary, the rewrite overwrites its snapshot point and the global
+        // point alike, so it is absent from both the numerator and the denominator and nothing
+        // is forfeited. Reading before the rewrite would record a weight the snapshot no longer
+        // contains, letting the forfeited slice exceed the epoch's pot.
+        _recordExit(tokenId);
         closed[tokenId] = true;
         totalLocked -= lock.amount;
 
@@ -756,8 +766,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @dev The in-progress epoch share is forfeited: record the snapshot weight this position
-    ///      held at the start of the current epoch so the distributor can move exactly that
-    ///      slice into the forfeiture bucket without ever touching the epoch's denominator.
+    ///      holds at the start of the current epoch, as the distributor will read it, so that
+    ///      settlement moves exactly that slice into the forfeiture bucket without ever touching
+    ///      the epoch's denominator.
     function _recordExit(uint256 tokenId) private {
         uint256 currentEpoch_ = EpochTime.currentEpoch();
         uint256 snapshotWeight = balanceOfNFTAt(tokenId, EpochTime.startOfEpoch(currentEpoch_));

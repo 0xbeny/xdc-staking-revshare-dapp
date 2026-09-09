@@ -85,7 +85,7 @@ contract VotingEscrowPenaltyTest is Base {
     }
 
     /// @dev A position created exactly on a week boundary *is* in that epoch's snapshot, so it
-    ///      is eligible for that epoch and forfeits that epoch's slice when it exits.
+    ///      is eligible for that epoch and forfeits that epoch's slice when it exits later.
     function test_emergencyExit_positionCreatedOnBoundaryForfeitsThatEpoch() public {
         vm.warp(_epochStart(_currentEpoch() + 1));
         uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
@@ -93,10 +93,29 @@ contract VotingEscrowPenaltyTest is Base {
 
         assertEq(escrow.firstEligibleEpoch(tokenId), epoch, "already inside this epoch's snapshot");
 
+        // A later block in the same epoch: the boundary snapshot is now immutable.
+        vm.warp(block.timestamp + 1 days);
         uint256 snapshotWeight = escrow.balanceOfNFTAt(tokenId, _epochStart(epoch));
+        assertGt(snapshotWeight, 0);
+
         vm.prank(alice);
         escrow.emergencyExit(tokenId);
         assertEq(escrow.exitedWeightByEpoch(epoch), snapshotWeight);
+        assertEq(escrow.exitedWeightByEpoch(epoch), escrow.totalSupplyAtWeek(_epochStart(epoch)));
+    }
+
+    /// @dev Creating and exiting inside the same block as the boundary removes the position from
+    ///      both sides of the fraction, so there is nothing to forfeit.
+    function test_emergencyExit_sameBlockAsBoundaryForfeitsNothing() public {
+        vm.warp(_epochStart(_currentEpoch() + 1));
+        uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
+        uint256 epoch = _currentEpoch();
+
+        vm.prank(alice);
+        escrow.emergencyExit(tokenId);
+
+        assertEq(escrow.exitedWeightByEpoch(epoch), 0);
+        assertEq(escrow.totalSupplyAtWeek(_epochStart(epoch)), 0);
     }
 
     function test_emergencyExit_revertsAfterExpiry() public {
@@ -256,6 +275,6 @@ contract VotingEscrowPenaltyTest is Base {
         vm.warp(escrow.locked(tokenId).end);
         vm.prank(alice);
         escrow.withdraw(tokenId);
-        assertEq(wxdc.balanceOf(alice), 10_000_000 ether);
+        assertEq(wxdc.balanceOf(alice), 100_000_000 ether);
     }
 }

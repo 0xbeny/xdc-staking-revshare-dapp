@@ -156,6 +156,41 @@ contract FeeDistributorForfeitureTest is Base {
         }
     }
 
+    /// @dev Regression (found by the invariant fuzzer): a position created and exited inside the
+    ///      same block as an epoch boundary is absent from that epoch's snapshot on both sides of
+    ///      the fraction. Recording its pre-exit weight as forfeited would let the forfeited
+    ///      slice exceed the epoch's whole pot.
+    function test_sameBlockCreateAndExitForfeitsNothingAndCannotExceedThePot() public {
+        vm.warp(_epochStart(_currentEpoch() + 1));
+        uint256 epoch = _currentEpoch();
+
+        uint256 flash = _lock(carol, 400_000 ether, 104 weeks);
+        vm.prank(carol);
+        escrow.emergencyExit(flash);
+
+        uint256 supply = escrow.totalSupplyAtWeek(_epochStart(epoch));
+        assertLe(escrow.exitedWeightByEpoch(epoch), supply, "forfeited weight can never exceed the snapshot");
+        assertEq(escrow.exitedWeightByEpoch(epoch), 0, "absent from the snapshot entirely");
+
+        _notifyExact(address(usdc), 1000e6);
+        _nextEpoch();
+        distributor.settle(address(usdc), 52);
+
+        assertEq(distributor.epochRevenue(address(usdc), epoch + 1), 0, "nothing moved forward");
+        assertEq(distributor.exitForfeitMovements(address(usdc)), 0);
+    }
+
+    /// @dev The general form: the recorded exited weight of an epoch never exceeds its supply.
+    function test_exitedWeightNeverExceedsTheEpochSupply() public {
+        uint256 epoch = _currentEpoch();
+        vm.prank(alice);
+        escrow.emergencyExit(a);
+        vm.prank(bob);
+        escrow.emergencyExit(b);
+
+        assertLe(escrow.exitedWeightByEpoch(epoch), escrow.totalSupplyAtWeek(_epochStart(epoch)));
+    }
+
     function _balance(address token, address who) internal view returns (uint256) {
         (, bytes memory ret) = token.staticcall(abi.encodeWithSignature("balanceOf(address)", who));
         return abi.decode(ret, (uint256));

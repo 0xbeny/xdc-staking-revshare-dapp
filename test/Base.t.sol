@@ -133,11 +133,11 @@ abstract contract Base is Test {
     function _fund() internal {
         address[4] memory users = [alice, bob, carol, dapp];
         for (uint256 i; i < users.length; ++i) {
-            vm.deal(users[i], 10_000_000 ether);
-            wxdc.mint(users[i], 10_000_000 ether);
+            vm.deal(users[i], 100_000_000 ether);
+            wxdc.mint(users[i], 100_000_000 ether);
             usdc.mint(users[i], 100_000_000e6);
         }
-        wxdc.mint(reporter, 10_000_000 ether);
+        wxdc.mint(reporter, 100_000_000 ether);
         usdc.mint(reporter, 100_000_000e6);
     }
 
