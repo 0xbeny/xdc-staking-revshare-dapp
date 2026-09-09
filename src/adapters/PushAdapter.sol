@@ -25,7 +25,7 @@ contract PushAdapter is RevenueAdapterBase {
 
     /// @dev Restricted to the registered source so a third party cannot inflate a dApp's
     ///      lifetime contribution record.
-    function commitRevenue(address token, uint256 amount) external {
+    function commitRevenue(address token, uint256 amount) external nonReentrant {
         if (_msgSender() != SOURCE) {
             revert NotSource();
         }

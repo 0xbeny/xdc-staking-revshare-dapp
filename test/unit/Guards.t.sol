@@ -16,6 +16,7 @@ import {Base} from "../Base.t.sol";
 import {MockAdapter} from "../mocks/MockAdapter.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockSafe} from "../mocks/MockSafe.sol";
+import {MockFalseReturnERC20, MockFeeOnTransferERC20} from "../mocks/MockWeirdERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Every input-validation and state guard across the system, one test each. Kept in
@@ -274,5 +275,53 @@ contract GuardsTest is Base {
         vm.expectRevert(ZodiacFeeModule.SafeExecutionFailed.selector);
         zodiac.skim(address(usdc));
         assertEq(usdc.balanceOf(address(feeSafeB3)), 1000e6, "a failed execution moves nothing");
+    }
+
+    function test_zodiacModuleRevertsWhenTransferReturnsFalse() public {
+        MockFalseReturnERC20 weird = new MockFalseReturnERC20();
+        address[] memory one = new address[](1);
+        one[0] = address(weird);
+
+        MockSafe safe = new MockSafe();
+        ZodiacFeeModule module = new ZodiacFeeModule(dapp, address(distributor), dappTreasury, 2500, one, address(safe));
+        safe.enableModule(address(module));
+
+        weird.mint(address(safe), 1000 ether);
+        vm.expectRevert(ZodiacFeeModule.SweepIncomplete.selector);
+        module.skim(address(weird));
+        assertEq(weird.balanceOf(address(safe)), 1000 ether, "funds stay in the fee Safe");
+        assertEq(weird.balanceOf(address(module)), 0);
+    }
+
+    function test_escrowRejectsFeeOnTransferDeposits() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(1000); // 10% fee
+        VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+
+        fot.mint(alice, 10 ether);
+        vm.startPrank(alice);
+        fot.approve(address(local), 10 ether);
+        vm.expectRevert(VotingEscrow.IncompleteTransfer.selector);
+        local.createLock(10 ether, 4 weeks);
+        vm.stopPrank();
+
+        assertEq(local.totalLocked(), 0);
+        assertEq(fot.balanceOf(address(local)), 0);
+    }
+
+    function test_escrowRejectsFeeOnTransferIncreaseAmount() public {
+        MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(0);
+        VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+
+        fot.mint(alice, 20 ether);
+        vm.startPrank(alice);
+        fot.approve(address(local), type(uint256).max);
+        uint256 tokenId = local.createLock(10 ether, 4 weeks);
+        fot.setFeeBps(1000);
+        vm.expectRevert(VotingEscrow.IncompleteTransfer.selector);
+        local.increaseAmount(tokenId, 5 ether);
+        vm.stopPrank();
+
+        assertEq(local.locked(tokenId).amount, 10 ether);
+        assertEq(local.totalLocked(), 10 ether);
     }
 }

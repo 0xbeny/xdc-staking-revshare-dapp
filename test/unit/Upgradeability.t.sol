@@ -79,6 +79,12 @@ contract UpgradeabilityTest is Base {
         distributor.setEscrow(address(0xBEEF));
     }
 
+    function test_setDistributorIsOneShot() public {
+        vm.prank(timelock);
+        vm.expectRevert(RevenueRegistry.DistributorAlreadySet.selector);
+        registry.setDistributor(address(0xBEEF));
+    }
+
     function test_implementationsCannotBeInitializedDirectly() public {
         FeeDistributor impl = new FeeDistributor();
         vm.expectRevert();

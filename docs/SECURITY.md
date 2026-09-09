@@ -96,9 +96,10 @@ These are recorded because each one is a class, not an instance:
   It is counted in `accounted` and never leaves the contract. This is deliberate: sweeping dust
   would be a path that moves lockers' tokens somewhere other than lockers.
 - **Reentrancy.** All state-changing entry points on the escrow and distributor are
-  `nonReentrant`; adapters have no state to reenter. Reward tokens are governance-listed;
-  fee-on-transfer tokens are accounted by balance delta, tokens with transfer hooks should not
-  be listed.
+  `nonReentrant`; adapter `skim` / `commitRevenue` / `postRevenue` are too. Reward tokens are
+  governance-listed; fee-on-transfer tokens are rejected on the escrow (`IncompleteTransfer` when
+  `received != amount`) and accounted by balance delta on the distributor; tokens with transfer
+  hooks should not be listed.
 - **History gaps.** If no lock is touched for more than 255 weeks (≈4.9 years) a single
   checkpoint cannot catch up; `checkpoint()` is permissionless and can be called repeatedly.
   The distributor's own cache and the escrow's week cache make this a theoretical concern.

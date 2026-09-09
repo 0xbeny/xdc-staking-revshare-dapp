@@ -65,11 +65,18 @@ arithmetic lives.
 4. The position records `penaltyCapBps = maxPenaltyBps` at that instant (grandfathering).
 5. It also records `firstEligibleEpoch = epochOf(ceilWeek(now))` — the first epoch whose
    start-of-epoch snapshot can contain it.
+6. Principal is credited from the **balance delta** of the escrow token transfer: if
+   `received != amount` the call reverts (`IncompleteTransfer`). This keeps
+   `totalLocked == token.balanceOf(escrow)`.
+
+`increaseAmount(tokenId, amount)` is **permissionless** (Curve-style): anyone may add
+principal and thereby re-weight the position's grandfathered penalty cap. `ZapDepositor.zapIncreaseAmount`
+is owner-only because the zap is a consent UX for native XDC; compounding and third-party
+funding use the escrow path directly.
 
 ### Weight
 
-The spec defines `weight = amount × effectiveTime / MAX_LOCK` with
-`effectiveTime = min(unlock − t, MAX_LOCK)`. The implementation computes it as
+The canonical weight formula is the **truncated slope** (not `amount × eff / MAX_LOCK`):
 
 ```
 slope  = amount / MAX_LOCK              (integer division, done once)
@@ -192,8 +199,10 @@ Epochs below `settledEpoch[token]` are final. Claims only read final epochs.
 
 `claim(tokenId, tokens[])` is permissionless (it always pays the position's recipient) and
 walks at most `MAX_EPOCHS_PER_CLAIM = 52` epochs per token, from the position's cursor up to
-`min(settledEpoch, exitEpoch)`. It returns `remaining > 0` when more finalized epochs are
-waiting. The cursor starts at `firstEligibleEpoch`.
+`min(settledEpoch, exitEpoch)`. It returns `remaining > 0` when **closed** epochs still sit
+ahead of the cursor (the open epoch is excluded). That signal includes closed-but-unsettled
+epochs so a bounded `settle` inside `claim` still prompts another call. The cursor starts at
+`firstEligibleEpoch`.
 
 `claimAndLock` claims WXDC and folds it straight back via `increaseAmount` — so the
 weighted-cap rule applies — and degrades to a plain claim once the lock has expired or closed.
@@ -219,19 +228,24 @@ it never backdates it and never loses it.
 Pure metadata: `(dapp, mode, committedBps, version, termsHash, active)` per adapter, plus
 lifetime contribution per `(adapter, token)`. It never holds a balance or an allowance. Terms
 are versioned metadata; changing them cannot change an adapter's on-chain behaviour — a new
-commitment means a new adapter.
+commitment means a new adapter. `setDistributor` is one-shot (mirrors `FeeDistributor.setEscrow`).
+Modes A/B/B2/B3 require `committedBps ∈ (0, 10_000]`; Mode C may record `0` as metadata.
 
 ## Adapters
 
 All adapters share `RevenueAdapterBase`: `(SOURCE, DISTRIBUTOR, DAPP_TREASURY,
 COMMITTED_BPS, tokens)` are fixed at construction with no setter, no owner and no upgrade
-path. Every sweep splits the full amount in the same transaction, so an adapter never holds a
-balance between calls. B2 and B3 additionally leave the dedicated fee Safe at a zero balance.
+path. Sweep / commit / attest entry points are `nonReentrant`. Every sweep splits the full
+amount in the same transaction, so an adapter never holds a balance between calls. B2 and B3
+additionally leave the dedicated fee Safe at a zero balance — B3 asserts that after Safe
+`exec` (raw `transfer` is not SafeERC20-hardened, so a false-returning token reverts
+`SweepIncomplete` rather than reporting a successful empty skim).
 
 The Attestor (Mode C) is the one adapter that serves many dApps: one immutable record per
-`(dapp, token, sourceEpoch)`, funds transferred in the same transaction, `distributionEpoch`
-assigned at receipt. Corrections are posted against a later source period; a negative
-adjustment nets against that transfer and never pulls from the distributor.
+`(dapp, token, sourceEpoch)` via `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`;
+funds transferred in the same transaction, `distributionEpoch` assigned at receipt. Corrections
+are posted against a later source period; a negative adjustment nets against that transfer and
+never pulls from the distributor.
 
 ## VeVotesAdapter
 

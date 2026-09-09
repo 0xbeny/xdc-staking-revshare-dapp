@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {Constants} from "./libraries/Constants.sol";
 import {EpochTime} from "./libraries/EpochTime.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -71,10 +72,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
                                 CONSTANTS
     //////////////////////////////////////////////////////////////*/
 
-    uint256 public constant WEEK = 7 days;
+    uint256 public constant WEEK = Constants.WEEK;
     uint256 public constant MIN_LOCK = 1 weeks;
     uint256 public constant MAX_LOCK = 104 weeks;
-    uint256 public constant BPS = 10_000;
+    uint256 public constant BPS = Constants.BPS;
 
     /// @notice Hard ceiling on the tunable penalty cap. Immutable, unreachable by governance.
     uint256 public constant HARD_MAX_PENALTY_BPS = 5000;
@@ -190,6 +191,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error NotAuthorized();
     error ZeroAddress();
     error ZeroAmount();
+    error IncompleteTransfer();
     error DurationNotWeekAligned();
     error DurationOutOfRange();
     error LockClosed();
@@ -653,10 +655,17 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             Lock({amount: amount.toUint128(), end: unlock.toUint64(), penaltyCapBps: maxPenaltyBps.toUint64()});
         _rewriteLock(tokenId, Lock({amount: 0, end: 0, penaltyCapBps: 0}), newLock);
 
-        totalLocked += amount;
+        // Credit principal from the balance delta, not the nominal amount, so fee-on-transfer
+        // tokens cannot desynchronise `totalLocked` from `token.balanceOf(this)`.
+        uint256 before = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - before;
+        if (received != amount) {
+            revert IncompleteTransfer();
+        }
+        totalLocked += received;
 
-        emit Deposit(tokenId, _msgSender(), amount, unlock);
+        emit Deposit(tokenId, _msgSender(), received, unlock);
     }
 
     /// @notice Adds principal to an existing position and re-weights its grandfathered penalty cap.
@@ -671,21 +680,29 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert LockExpired();
         }
 
+        // Pull first so the lock and `totalLocked` are written from the actual receipt. A
+        // fee-on-transfer token that delivered less than `amount` must not inflate principal.
+        uint256 before = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - before;
+        if (received != amount) {
+            revert IncompleteTransfer();
+        }
+
         uint256 oldPrincipal = oldLock.amount;
-        uint256 newPrincipal = oldPrincipal + amount;
-        uint256 newCap = (oldPrincipal * oldLock.penaltyCapBps + amount * maxPenaltyBps) / newPrincipal;
+        uint256 newPrincipal = oldPrincipal + received;
+        uint256 newCap = (oldPrincipal * oldLock.penaltyCapBps + received * maxPenaltyBps) / newPrincipal;
 
         Lock memory newLock =
             Lock({amount: newPrincipal.toUint128(), end: oldLock.end, penaltyCapBps: newCap.toUint64()});
         _rewriteLock(tokenId, oldLock, newLock);
 
-        totalLocked += amount;
-        IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
+        totalLocked += received;
 
         if (newCap != oldLock.penaltyCapBps) {
             emit PenaltyCapUpdated(tokenId, oldLock.penaltyCapBps, newCap);
         }
-        emit Deposit(tokenId, _msgSender(), amount, oldLock.end);
+        emit Deposit(tokenId, _msgSender(), received, oldLock.end);
     }
 
     /// @notice Extends a lock. Never changes the position's penalty cap (spec §3.4).

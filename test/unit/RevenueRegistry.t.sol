@@ -45,6 +45,25 @@ contract RevenueRegistryTest is Base {
         vm.stopPrank();
     }
 
+    /// @dev Modes A/B/B2/B3 reject zero bps (adapter constructors do too). Mode C may record 0.
+    function test_registerRejectsZeroBpsExceptAttestation() public {
+        vm.startPrank(timelock);
+        vm.expectRevert(RevenueRegistry.InvalidBps.selector);
+        registry.registerAdapter(address(0xB1), dapp, IRevenueRegistry.Mode.SPLITTER, 0, 1, "");
+        vm.expectRevert(RevenueRegistry.InvalidBps.selector);
+        registry.registerAdapter(address(0xB2), dapp, IRevenueRegistry.Mode.PUSH, 0, 1, "");
+        vm.expectRevert(RevenueRegistry.InvalidBps.selector);
+        registry.registerAdapter(address(0xB3), dapp, IRevenueRegistry.Mode.PULL_SAFE, 0, 1, "");
+        vm.expectRevert(RevenueRegistry.InvalidBps.selector);
+        registry.registerAdapter(address(0xB4), dapp, IRevenueRegistry.Mode.ZODIAC_SAFE, 0, 1, "");
+
+        registry.registerAdapter(address(0xC1), dapp, IRevenueRegistry.Mode.ATTESTATION, 0, 1, "mode-c");
+        vm.stopPrank();
+
+        assertEq(registry.adapterInfo(address(0xC1)).committedBps, 0);
+        assertEq(uint8(registry.adapterInfo(address(0xC1)).mode), uint8(IRevenueRegistry.Mode.ATTESTATION));
+    }
+
     function test_onlyRegistryAdminCanRegister() public {
         bytes32 role = registry.REGISTRY_ADMIN_ROLE();
         vm.prank(alice);

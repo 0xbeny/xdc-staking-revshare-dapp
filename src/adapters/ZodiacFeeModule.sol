@@ -14,6 +14,9 @@ contract ZodiacFeeModule is RevenueAdapterBase {
     address public immutable FEE_SAFE;
 
     error SafeExecutionFailed();
+    /// @notice Safe `exec` returned success but the fee Safe was not emptied / adapter did not
+    ///         receive the pre-skim balance (e.g. a token that returns `false` on `transfer`).
+    error SweepIncomplete();
 
     constructor(
         address source_,
@@ -29,19 +32,27 @@ contract ZodiacFeeModule is RevenueAdapterBase {
         FEE_SAFE = feeSafe_;
     }
 
-    function skim(address token) external returns (uint256 committed, uint256 remainder) {
+    function skim(address token) external nonReentrant returns (uint256 committed, uint256 remainder) {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(FEE_SAFE);
         if (balance == 0) {
             revert NothingToSkim();
         }
 
+        uint256 before = IERC20(token).balanceOf(address(this));
         bool ok = IAvatar(FEE_SAFE)
             .execTransactionFromModule(token, 0, abi.encodeCall(IERC20.transfer, (address(this), balance)), 0);
         if (!ok) {
             revert SafeExecutionFailed();
         }
 
-        return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
+        // Raw `transfer` via the Safe does not go through SafeERC20. Tokens that return `false`
+        // (or otherwise fail to move the full balance) must not look like a successful skim.
+        uint256 received = IERC20(token).balanceOf(address(this)) - before;
+        if (IERC20(token).balanceOf(FEE_SAFE) != 0 || received != balance) {
+            revert SweepIncomplete();
+        }
+
+        return _splitAndForward(token, received);
     }
 }

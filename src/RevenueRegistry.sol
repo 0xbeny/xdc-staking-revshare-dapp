@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
+import {Constants} from "./libraries/Constants.sol";
 import {Roles} from "./libraries/Roles.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -44,6 +45,7 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
     error NotDistributor();
     error InvalidMode();
     error InvalidBps();
+    error DistributorAlreadySet();
 
     constructor() {
         _disableInitializers();
@@ -66,6 +68,9 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
         if (distributor_ == address(0)) {
             revert ZeroAddress();
         }
+        if (distributor != address(0)) {
+            revert DistributorAlreadySet();
+        }
         distributor = distributor_;
         emit DistributorSet(distributor_);
     }
@@ -87,7 +92,9 @@ contract RevenueRegistry is IRevenueRegistry, AccessControlUpgradeable, UUPSUpgr
         if (mode == Mode.NONE) {
             revert InvalidMode();
         }
-        if (committedBps > 10_000) {
+        // Mode C may record 0 bps as metadata; every fund-moving mode mirrors adapter
+        // constructors and requires a positive commitment.
+        if (committedBps > Constants.BPS || (mode != Mode.ATTESTATION && committedBps == 0)) {
             revert InvalidBps();
         }
         if (_adapters[adapter].dapp != address(0)) {

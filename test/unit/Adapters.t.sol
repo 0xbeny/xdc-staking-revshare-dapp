@@ -5,8 +5,11 @@ import {FeeSplitter} from "../../src/adapters/FeeSplitter.sol";
 import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {RevenueAdapterBase} from "../../src/adapters/RevenueAdapterBase.sol";
 import {ZodiacFeeModule} from "../../src/adapters/ZodiacFeeModule.sol";
+import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
 import {Base} from "../Base.t.sol";
 import {MockSafe} from "../mocks/MockSafe.sol";
+import {ReentrantToken} from "../mocks/ReentrantClaimer.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract AdaptersTest is Base {
     function setUp() public override {
@@ -159,5 +162,46 @@ contract AdaptersTest is Base {
         dup[2] = address(wxdc);
         FeeSplitter s = new FeeSplitter(dapp, address(distributor), dappTreasury, 3000, dup);
         assertEq(s.supportedTokens().length, 2);
+    }
+
+    /// @dev Remainder transfer to the dApp treasury must not reenter `skim`.
+    function test_splitterSkimIsNonReentrant() public {
+        ReentrantToken hooked = new ReentrantToken();
+        address[] memory one = new address[](1);
+        one[0] = address(hooked);
+
+        FeeSplitter local = new FeeSplitter(dapp, address(distributor), dappTreasury, 3000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(hooked));
+        registry.registerAdapter(address(local), dapp, IRevenueRegistry.Mode.SPLITTER, 3000, 1, "reenter");
+        vm.stopPrank();
+
+        hooked.mint(address(local), 10_000 ether);
+        hooked.setHook(address(local), abi.encodeCall(FeeSplitter.skim, (address(hooked))));
+
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        local.skim(address(hooked));
+    }
+
+    /// @dev Source `transferFrom` into the push adapter must not reenter `commitRevenue`.
+    function test_pushCommitIsNonReentrant() public {
+        ReentrantToken hooked = new ReentrantToken();
+        address[] memory one = new address[](1);
+        one[0] = address(hooked);
+
+        PushAdapter local = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(hooked));
+        registry.registerAdapter(address(local), dapp, IRevenueRegistry.Mode.PUSH, 10_000, 1, "reenter-push");
+        vm.stopPrank();
+
+        hooked.mint(dapp, 1000 ether);
+        hooked.setHook(address(local), abi.encodeCall(PushAdapter.commitRevenue, (address(hooked), uint256(1))));
+
+        vm.startPrank(dapp);
+        hooked.approve(address(local), 1000 ether);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        local.commitRevenue(address(hooked), 1000 ether);
+        vm.stopPrank();
     }
 }

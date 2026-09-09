@@ -7,6 +7,7 @@ import {Roles} from "../libraries/Roles.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 /// @title Attestor
@@ -22,7 +23,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 ///
 ///      `sourceEpoch` is metadata for dashboards and reconciliation. `distributionEpoch` is
 ///      assigned at receipt and can never be chosen by the reporter (§3.2 #8).
-contract Attestor is AccessControl {
+contract Attestor is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -89,7 +90,7 @@ contract Attestor is AccessControl {
         uint256 gross,
         int256 adjustment,
         bytes32 metadataHash
-    ) external onlyRole(REPORTER_ROLE) returns (uint256 net) {
+    ) external onlyRole(REPORTER_ROLE) nonReentrant returns (uint256 net) {
         if (dapp == address(0)) {
             revert ZeroAddress();
         }

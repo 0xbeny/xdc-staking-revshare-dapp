@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IFeeDistributor} from "./interfaces/IFeeDistributor.sol";
 import {IRevenueRegistry} from "./interfaces/IRevenueRegistry.sol";
 import {IVotingEscrow} from "./interfaces/IVotingEscrow.sol";
+import {Constants} from "./libraries/Constants.sol";
 import {EpochTime} from "./libraries/EpochTime.sol";
 import {Roles} from "./libraries/Roles.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
@@ -52,7 +53,7 @@ contract FeeDistributor is
     bytes32 public constant PAUSER_ROLE = Roles.PAUSER;
     bytes32 public constant KEEPER_ROLE = Roles.KEEPER;
 
-    uint256 public constant WEEK = 7 days;
+    uint256 public constant WEEK = Constants.WEEK;
     /// @notice Hard bound on epochs walked per claim call. No unbounded loop exists anywhere.
     uint256 public constant MAX_EPOCHS_PER_CLAIM = 52;
     /// @notice Pre-boundary keeper window (§5): the last two hours of an epoch.
@@ -364,7 +365,8 @@ contract FeeDistributor is
 
     /// @notice Claims up to `MAX_EPOCHS_PER_CLAIM` finalized epochs per token.
     /// @return amounts Per-token amount transferred to the position's recipient.
-    /// @return remaining Finalized epochs still unclaimed across `tokens`; call again if non-zero.
+    /// @return remaining Closed epochs still ahead of the cursor (open epoch excluded). Call again
+    ///         if non-zero — `claim` settles then pays, so this covers unsettled closed epochs too.
     function claim(uint256 tokenId, address[] calldata tokens)
         external
         nonReentrant
@@ -452,7 +454,10 @@ contract FeeDistributor is
     ///      every settled epoch from its cursor, bounded by `MAX_EPOCHS_PER_CLAIM`.
     /// @return amount   Claimable now.
     /// @return newCursor Where the cursor lands after this page.
-    /// @return remaining Closed epochs still ahead of the new cursor; non-zero means call again.
+    /// @return remaining Closed epochs still ahead of the new cursor (open epoch excluded);
+    ///                    non-zero means call again. Uses `currentEpoch` as an exclusive end so
+    ///                    unsettled closed epochs still signal a backlog; settled-only math would
+    ///                    report `0` mid-pagination after a bounded `settle`.
     function _pending(uint256 tokenId, address token)
         internal
         view
@@ -482,11 +487,12 @@ contract FeeDistributor is
         }
         newCursor = cursor;
 
-        uint256 claimableThrough = EpochTime.currentEpoch();
-        if (finalEpoch < claimableThrough) {
-            claimableThrough = finalEpoch;
+        // Closed epochs are `[start, currentEpoch)`. The open epoch is never claimable.
+        uint256 closedEnd = EpochTime.currentEpoch();
+        if (finalEpoch < closedEnd) {
+            closedEnd = finalEpoch;
         }
-        remaining = claimableThrough > cursor ? claimableThrough - cursor : 0;
+        remaining = closedEnd > cursor ? closedEnd - cursor : 0;
     }
 
     function _cursor(uint256 tokenId, address token) internal view returns (uint256) {

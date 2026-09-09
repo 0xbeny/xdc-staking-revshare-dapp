@@ -31,7 +31,7 @@ contract PullAdapter is RevenueAdapterBase {
         FEE_SAFE = feeSafe_;
     }
 
-    function skim(address token) external returns (uint256 committed, uint256 remainder) {
+    function skim(address token) external nonReentrant returns (uint256 committed, uint256 remainder) {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(FEE_SAFE);
         if (balance == 0) {

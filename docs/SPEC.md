@@ -48,8 +48,8 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 **Locking:**
 - WXDC direct, or native XDC via `ZapDepositor` → `create_lock_for(beneficiary, ...)`; eligibility checked against the beneficiary.
 - `duration % 1 weeks == 0`, `MIN_LOCK ≤ duration ≤ MAX_LOCK`. Unlock **rounds UP** to the next week boundary; `require(effective ≥ MIN_LOCK)`.
-- **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. Weight = `amount × effectiveTime / MAX_LOCK`; penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
-- `increase_amount(tokenId, amount)`, `increase_unlock_time(tokenId, newUnlock)` (same round-up + clamp).
+- **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. **Weight uses the truncated slope** `weight = (amount / MAX_LOCK) × effectiveTime` so Σ positions == `totalSupply` to the wei (dust locks with `amount < MAX_LOCK` have zero weight). Penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
+- `increase_amount(tokenId, amount)` is **permissionless** (anyone may fund a position; the cap re-weights). `increase_unlock_time(tokenId, newUnlock)` is owner-or-operator only (same round-up + clamp). `ZapDepositor.zapIncreaseAmount` is owner-only as a native-XDC consent UX; auto-compound uses the escrow path.
 - `withdraw(tokenId)` after expiry: full principal, unconditional under any periphery state.
 - **No split, no merge (#2).** Multiple maturities = multiple positions. This deletes checkpoint lineage, reward-debt migration, forced-settlement plumbing, and the mid-epoch entitlement-migration problem from the immutable core entirely.
 
@@ -70,7 +70,7 @@ Registry: whitelisting, terms/mode/version, lifetime contribution. No allowances
 - **Mode B2 — PullAdapter on a dedicated fee Safe.** Allowance to the immutable adapter only; `skim()` sweeps the full balance (committed → distributor, remainder → dApp treasury).
 - **Mode B3 — Zodiac module on a dedicated fee Safe (#7).** Same sweep-both rule. **B3 no longer operates on a general treasury Safe** — commingled treasury capital must never be bps-taxed. The dApp routes fees to a dedicated fee Safe and installs the module there.
 - **Unified B2/B3 invariant (#7):** `feeSafe balance == 0` after every successful sweep; everything entering that address is definitionally revenue.
-- **Mode C — atomic epoch attestation (#6).** `postRevenue(dapp, token, sourceEpoch, amount, metadataHash)`: exactly one immutable record per `(dapp, token, sourceEpoch)`; record and fund transfer are one atomic transaction; duplicates revert. **No pre-finalization superseding, no mutable state.** Errors are corrected by posting a signed adjustment against a *later* source period — a positive adjustment transfers additional funds; a negative adjustment offsets against that later transfer (never a clawback from the distributor).
+- **Mode C — atomic epoch attestation (#6).** `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`: exactly one immutable record per `(dapp, token, sourceEpoch)`; record and fund transfer are one atomic transaction; duplicates revert. **No pre-finalization superseding, no mutable state.** `net = gross + adjustment` must be ≥ 0; positive net transfers that amount, zero net records without transferring. Errors are corrected by posting a signed adjustment against a *later* source period — a positive adjustment transfers additional funds; a negative adjustment offsets against that later transfer (never a clawback from the distributor).
 
 **Revenue attribution — frozen rule (#8):**
 
@@ -134,7 +134,7 @@ Unchanged framing from v0.4 (stylized, assumptions stated, dominance claims scop
 
 ## 7. Security program
 
-Foundry invariants first-class; fork audited escrow references, audit the diff; Slither + Mythril CI; 100% branch coverage on escrow + distributor.
+Foundry invariants first-class; fork audited escrow references, audit the diff; Slither in `make ci`; branch coverage tracked in [`SECURITY.md`](SECURITY.md) (`FeeDistributor` / adapters / registry at 100%; escrow 57/65 with documented unreachable defensive branches).
 
 **Named invariants (v0.5 set):**
 - Principal safety: no path but immutable withdraw/exit; `emergencyExit` makes no external calls; post-maturity `withdraw` succeeds under hostile periphery.

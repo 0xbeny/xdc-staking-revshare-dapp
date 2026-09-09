@@ -67,7 +67,9 @@ contract ZapDepositorTest is Base {
         assertEq(escrow.locked(tokenId).amount, 150 ether);
     }
 
-    /// @dev Adding principal re-weights the position's penalty cap, so only the owner may do it.
+    /// @dev Adding principal re-weights the position's penalty cap, so only the owner may do it
+    ///      through the zap. The escrow itself stays Curve-style permissionless so compounders
+    ///      and gifters can still fund a position directly.
     function test_zapIncreaseAmountRejectsNonOwners() public {
         vm.prank(alice);
         uint256 tokenId = zap.zapCreateLock{value: 100 ether}(52 weeks);
@@ -78,7 +80,36 @@ contract ZapDepositorTest is Base {
         zap.zapIncreaseAmount{value: 50 ether}(tokenId);
 
         assertEq(escrow.locked(tokenId).amount, 100 ether);
-        assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore, "a stranger cannot touch the cap");
+        assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore, "a stranger cannot touch the cap via zap");
+    }
+
+    /// @dev Escrow `increaseAmount` is intentionally permissionless: a stranger may fund someone
+    ///      else's position (and thereby re-weight the cap toward current global terms).
+    function test_strangerCanFundIncreaseAmountDirectlyOnEscrow() public {
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(4000);
+
+        vm.startPrank(alice);
+        wxdc.approve(address(escrow), 100 ether);
+        uint256 tokenId = escrow.createLock(100 ether, 52 weeks);
+        vm.stopPrank();
+
+        uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
+        assertEq(capBefore, 4000);
+
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(5000);
+
+        vm.startPrank(bob);
+        wxdc.approve(address(escrow), 100 ether);
+        escrow.increaseAmount(tokenId, 100 ether);
+        vm.stopPrank();
+
+        assertEq(escrow.ownerOf(tokenId), alice, "ownership unchanged");
+        assertEq(escrow.locked(tokenId).amount, 200 ether);
+        // newCap = (100e*4000 + 100e*5000) / 200e = 4500
+        assertEq(escrow.locked(tokenId).penaltyCapBps, 4500);
+        assertEq(wxdc.balanceOf(address(escrow)), escrow.totalLocked());
     }
 
     function test_zapRejectsZeroValue() public {
