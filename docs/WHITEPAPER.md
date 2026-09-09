@@ -217,7 +217,86 @@ a consent mechanism.
 
 ---
 
-## 6. Security model
+## 6. Game theory
+
+The mechanism is designed so that the individually rational strategy is also the one that
+strengthens the system: lock long, maintain weight, stay through stress. This section makes
+the incentive structure explicit. (Payoffs are stylized and directional, not simulations.)
+
+### 6.1 The locker's strategy menu
+
+For a holder deciding what to do with idle XDC, against a backdrop of ongoing dApp revenue:
+
+| Strategy | Weekly revenue share | Exit cost | Net position |
+|---|---|---|---|
+| **Max-lock + `keepAtMaxLock`** | full weight, every epoch | up to cap (50%) if exiting immediately, linearly less over time | dominant while revenue > 0 and horizon is real |
+| Lock, let weight decay | starts equal, halves by mid-lock | shrinks at the same linear rate | strictly dominated by maintaining, for the same capital and horizon |
+| Lock short (repeated 1-week locks) | ≈ 1/104 of max weight per token | near zero | earns almost nothing; commitment is what's priced |
+| Don't lock | zero | zero | forfeits yield; correct only if you can't commit at all |
+
+Weight is linear in *remaining* time, so the marginal reward of every additional week of
+commitment is constant — there is no plateau after which commitment stops paying, and no
+cliff that punishes intermediate choices arbitrarily. The 104-week locker earns exactly 104×
+the weight of a 1-week locker per token locked. Short-lock cycling is not an exploit; it is
+simply priced at what it is.
+
+### 6.2 Stay vs. exit — the anti-bank-run matrix
+
+The classic failure mode of locked systems is the reflexive run: fear of others leaving makes
+leaving rational. veXDC inverts this, because **every early exit pays the remaining lockers**
+(the majority share of the penalty streams to stayers, and the exiter's share of the current
+epoch is forfeited into the next). Consider a stressed market, a locker ("You") against the
+aggregate behavior of everyone else:
+
+| | **Others stay** | **Others exit early** |
+|---|---|---|
+| **You stay** | baseline yield | **best case:** your revenue share rises (smaller denominator) *and* you collect a share of every exiter's penalty |
+| **You exit early** | worst case: you pay the penalty, others absorb it | you pay the penalty *and* miss the penalty flow from everyone else |
+
+Staying is the better response to *both* columns: exits by others make staying **more**
+attractive, not less. The run dynamic is self-damping rather than self-reinforcing — the
+opposite sign of the coordination failure that drains conventional lock systems. An early
+exit is never "punished into impossibility" (the door is always open, at a price known since
+lock time), but it is never contagious either.
+
+Two design details keep this matrix honest under adversarial conditions:
+
+- The penalty is **snapshotted at exit request** and the formula lives in immutable
+  bytecode, so the payoffs cannot be changed mid-game by governance or by the crowd.
+- The exiter can never receive any part of their own forfeiture, so there is no self-dealing
+  path through the compensation mechanism.
+
+### 6.3 The dApp's commitment game
+
+A dApp choosing whether to commit revenue plays against the locker community's willingness
+to lock:
+
+| | **Users lock XDC** | **Users don't lock** |
+|---|---|---|
+| **dApp commits revenue** | alignment equilibrium: dApp rents a stake-weighted, long-horizon user base; lockers earn real yield | dApp pays briefly into a small pool — cheap experiment, visible on-chain, easily wound down (deploy no successor adapter) |
+| **dApp commits nothing** | free-rides on ecosystem stake it did nothing to attract; loses the loyalty channel to committing competitors | dead market |
+
+Because adapter terms are immutable and public, a commitment is a *credible signal* — a dApp
+cannot quietly reduce its share without deploying a new adapter, which is an on-chain event
+anyone can observe. Credibility is what moves the game from cheap talk to the top-left cell:
+lockers can verify, not merely trust, that the yield source is contractual. Symmetrically,
+the protocol cannot retroactively tax dApps — the committed share is fixed in the adapter
+the dApp itself deployed.
+
+### 6.4 Time-consistency: why the rules can't defect
+
+Every game above assumes the rules hold. In most protocols that assumption is itself a game
+against governance. Here, the moves governance could use to defect are removed rather than
+discouraged: it cannot raise any existing position's penalty cap (grandfathering is enforced
+in the escrow), cannot touch the weight formula or penalty destinations (immutable), cannot
+block exits (the cooldown is hard-capped at 7 days), and cannot reach principal through any
+upgrade (the vault is not upgradeable). The players' subgame-perfect strategies can therefore
+be computed at lock time — which is precisely what "exit economics must be predictable at
+lock time" means in game-theoretic terms.
+
+---
+
+## 7. Security model
 
 - **Principal-safety invariant (machine-checked):** no governance action, upgrade, registry
   change, pause, or peripheral failure can move principal except through `withdraw` /
@@ -242,7 +321,7 @@ contract-eligibility checks are a protocol-support policy, not a cryptographic g
 
 ---
 
-## 7. Governance
+## 8. Governance
 
 Governance (a multisig maturing into a timelock) operates strictly within immutable clamps:
 it can tune the penalty cap (≤ 50%), the penalty split (treasury ≤ 50%), the exit cooldown
@@ -255,7 +334,7 @@ governance primitive for future protocol decisions: weight already reflects both
 remaining commitment, which is exactly the constituency a long-horizon protocol should answer
 to.
 
-## 8. Roadmap
+## 9. Roadmap
 
 - **v1 (this paper):** locking, weekly real-yield distribution, five adapter modes,
   keeper conveniences, governance reads. Launch reward tokens: WXDC and USDC.
@@ -267,7 +346,7 @@ to.
 
 ---
 
-## 9. Summary
+## 10. Summary
 
 veXDC pays XDC lockers a pro-rata share of real dApp revenue, weekly, weighted by how much
 they lock and how long they commit. The contract holding principal is immutable and admits
@@ -282,4 +361,4 @@ ecosystem earns, lockers earn.
 *This document describes software under active development, prior to external audit. Nothing
 here is financial advice or an offer of securities. Parameters cited (lock bounds, penalty
 caps, cooldowns, launch tokens) are v1 defaults and may change before mainnet deployment;
-the immutable clamps described in §5–§7 cannot.*
+the immutable clamps described in §5–§8 cannot.*
