@@ -1,0 +1,32 @@
+# Foundry
+out/
+cache/
+broadcast/*/dry-run/
+docs/book/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+keystore/
+mnemonic*
+secrets*
+
+# Deployment artifacts containing addresses are committed; raw keys are not
+deployments/*.private.json
+
+# Node / tooling
+node_modules/
+coverage/
+lcov.info
+*.lcov
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

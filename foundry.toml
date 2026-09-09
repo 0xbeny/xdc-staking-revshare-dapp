@@ -1,0 +1,64 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+solc_version = "0.8.28"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+bytecode_hash = "none"
+cbor_metadata = false
+verbosity = 2
+gas_reports = ["VotingEscrow", "FeeDistributor", "ZapDepositor"]
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+
+[profile.ci]
+verbosity = 3
+fuzz = { runs = 2000, max_test_rejects = 1_000_000 }
+invariant = { runs = 512, depth = 64, fail_on_revert = false, call_override = false }
+
+[profile.default.fuzz]
+runs = 512
+max_test_rejects = 500_000
+seed = "0x1337"
+
+[profile.default.invariant]
+runs = 128
+depth = 48
+fail_on_revert = false
+shrink_run_limit = 5000
+
+[profile.lite]
+optimizer = false
+fuzz = { runs = 32 }
+invariant = { runs = 8, depth = 16 }
+
+[lint]
+# Stylistic-only rules we deliberately diverge from:
+#  - mixed-case-function      : `balanceOfNFT` / spec-named `create_lock_for` aliases.
+#  - screaming-snake-case-immutable : `token`/`distributor`/`treasury` are part of the read ABI.
+#  - unwrapped-modifier-logic : a one-line auth check is clearer inline.
+exclude_lints = ["mixed-case-function", "screaming-snake-case-immutable", "unwrapped-modifier-logic"]
+
+[fmt]
+line_length = 120
+tab_width = 4
+bracket_spacing = false
+int_types = "long"
+multiline_func_header = "attributes_first"
+quote_style = "double"
+number_underscore = "thousands"
+single_line_statement_blocks = "multi"
+sort_imports = true
+
+[rpc_endpoints]
+xdc = "${XDC_RPC_URL}"
+xdc_apothem = "${XDC_APOTHEM_RPC_URL}"
+localhost = "http://127.0.0.1:8545"
+
+[etherscan]
+xdc = { key = "${XDCSCAN_API_KEY}", url = "https://api.xdcscan.com/api", chain = 50 }
+xdc_apothem = { key = "${XDCSCAN_API_KEY}", url = "https://api-apothem.xdcscan.com/api", chain = 51 }
