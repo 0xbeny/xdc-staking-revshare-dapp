@@ -1,0 +1,99 @@
+# Security model
+
+## Trust boundaries
+
+| Actor | Can | Cannot |
+|---|---|---|
+| **User** | lock, increase, extend, withdraw at expiry, exit early at the immutable penalty, claim, set recipient / keeper flags / operators | transfer, split, merge, wrap, avoid the penalty |
+| **Operator** (user-approved) | `increaseUnlockTime` on that user's positions | anything else |
+| **Keeper** (`KEEPER_ROLE`) | extend opted-in locks in the window, compound opted-in rewards | move principal, redirect claims, change parameters |
+| **Guardian** (`PAUSER_ROLE`) | pause the distributor | unpause, touch the escrow, touch parameters |
+| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | tune `maxPenaltyBps` / `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter | move principal, change penalty destinations, raise an existing position's cap, bypass the clamps, upgrade the escrow |
+| **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
+| **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
+
+## Principal safety
+
+- All principal is in `VotingEscrow`, which has no upgrade path, no owner and no `selfdestruct`.
+- The only functions that move principal out are `withdraw` (owner, after expiry) and
+  `emergencyExit` (owner, before expiry, at the immutable formula). Both read only escrow
+  storage and make no external call except the token transfers themselves.
+- Penalty destinations are `immutable`. Penalty parameters are clamped by `constant`s.
+- A paused or maliciously upgraded distributor cannot reach principal
+  (`test_upgradedDistributorStillCannotMovePrincipal`, `test_guardianPauseNeverTouchesPrincipal`).
+- The deployer holds no role after deployment (`VeXDCDeployer.verify` asserts this and the
+  script reverts otherwise).
+
+## Named invariants (SPEC §7) and where they are enforced
+
+| Invariant | Enforced by |
+|---|---|
+| Principal: `WXDC.balanceOf(escrow) == totalLocked`, deposits == withdrawals + penalties + locked | `invariant_escrowHoldsExactlyItsOutstandingPrincipal`, `invariant_principalIsConserved` |
+| `weight ≤ principal`, `effectiveTime ≤ MAX_LOCK` | `invariant_weightNeverExceedsPrincipal`, `testFuzz_weightNeverExceedsPrincipal`, `testFuzz_effectiveTimeIsAlwaysClamped` |
+| `totalSupply == Σ position weight` (incl. clamped region) | `invariant_totalSupplyEqualsSumOfPositions`, `testFuzz_totalSupplyEqualsSumOfPositions` |
+| `penaltyBps ≤ min(positionCap, maxPenaltyBps) ≤ HARD_MAX` | `invariant_penaltyStaysWithinTheClamps`, `testFuzz_penaltyIsAlwaysWithinTheClamps` |
+| Grandfathering: governance never raises an existing cap; `increase_amount` re-weights exactly; extensions never change it | `testFuzz_governanceCannotWorsenAnExistingPosition`, `testFuzz_increaseAmountReweightsCapWithinBounds`, `testFuzz_extensionsNeverChangeTheCap` |
+| Conservation per token: `accounted == notified − claimed`, `balance ≥ accounted`, `claimed ≤ notified` | `invariant_distributorConservesValue`, `testFuzz_claimsNeverExceedNotifications` |
+| Denominators immutable post-snapshot; exited position never receives own forfeiture | `test_denominatorIsUnchangedByAnExit`, `test_exitingPositionNeverReceivesItsOwnForfeiture` |
+| `exitedWeightByEpoch[e] ≤ supply(e)` | `invariant_exitedWeightNeverExceedsEpochSupply` |
+| Effective lock ≥ MIN_LOCK, week-aligned | `testFuzz_effectiveLockIsAtLeastMinLock` |
+| Soulbound: no transfer path; no `wrapInto`, split or merge | `VotingEscrow.soulbound.t.sol` |
+| Claims: cursor monotonic, bounded, idempotent, no double-pay across pages | `invariant_claimCursorsAreMonotonic`, `testFuzz_pagedClaimsSumToTheSameTotal`, `testFuzz_repeatedClaimsAreIdempotent` |
+| B2/B3: fee Safe balance == 0 after sweep; double-skim moves zero | `Adapters.t.sol` |
+| Mode C: unique immutable records, atomic transfer, reporter cannot set distribution epoch, no clawback | `Attestor.t.sol` |
+| Keeper: epoch guards, window guard, missed window never corrected, compound at expiry degrades to claim | `FeeDistributor.keeper.t.sol` |
+| Zero-supply epochs carry forward, never divide by zero | `test_zeroSupplyEpochCarriesRevenueForward`, `test_settleNeverDividesByZero` |
+
+The invariant suite is run in CI with `fail_on_revert = true`, 256 runs × 64 depth.
+
+## Bugs the test-suite found before launch
+
+These are recorded because each one is a class, not an instance:
+
+1. **Snapshot-boundary eligibility.** A position created exactly on a week boundary is inside
+   that epoch's snapshot denominator. Starting its claim cursor one epoch later stranded its
+   slice. Fixed with `firstEligibleEpoch = epochOf(ceilWeek(createdAt))`.
+2. **Mid-block cache freeze.** Memoising a week-boundary supply while `block.timestamp` still
+   equals that boundary froze a value that later locks in the same block would change.
+   Fixed by memoising only boundaries strictly in the past (both in the escrow and in the
+   distributor's cache).
+3. **Same-block create-and-exit.** Recording the forfeited weight *before* rewriting the lock
+   captured a weight that the snapshot, read later, no longer contained — letting the forfeited
+   slice exceed the epoch's whole pot. Fixed by recording after the rewrite.
+
+## Known limitations and accepted risks
+
+- **Counterfactual contracts.** Eligibility is `code.length == 0` at lock time. A CREATE2
+  address can gain code later. With soulbound positions and per-tokenId claims, such a contract
+  can do no more than an EOA that co-ordinates off-chain. Monitored, not prevented (SPEC §3.1 #10).
+- **`_safeMint`.** A whitelisted custodian must implement `onERC721Received`. A Safe with the
+  standard compatibility fallback handler does. A contract that does not will revert at lock
+  time — before principal is committed — rather than strand it afterwards.
+- **Keeper as operator.** `keepAtMaxLock` requires the user to approve the distributor (an
+  upgradeable contract) as an operator. The operator right covers *only* extension, which can
+  never shorten a lock, touch principal, or change the penalty cap. Users who prefer can
+  approve the keeper EOA directly instead, or extend themselves.
+- **Late forfeiture sync.** A penalty's locker share is credited to the epoch after the sync
+  that notices it, not the epoch after the exit. It is never lost; it may be delayed if no
+  claim, settle or sync happens for a while. The keeper syncs on every `EmergencyExit` event.
+- **Rounding dust.** Integer division leaves at most one wei per claim in the distributor.
+  It is counted in `accounted` and never leaves the contract. This is deliberate: sweeping dust
+  would be a path that moves lockers' tokens somewhere other than lockers.
+- **Reentrancy.** All state-changing entry points on the escrow and distributor are
+  `nonReentrant`; adapters have no state to reenter. Reward tokens are governance-listed;
+  fee-on-transfer tokens are accounted by balance delta, tokens with transfer hooks should not
+  be listed.
+- **History gaps.** If no lock is touched for more than 255 weeks (≈4.9 years) a single
+  checkpoint cannot catch up; `checkpoint()` is permissionless and can be called repeatedly.
+  The distributor's own cache and the escrow's week cache make this a theoretical concern.
+
+## Static analysis
+
+`forge lint` runs in CI with a zero-findings policy on `src/`, `test/` and `script/`.
+Slither runs in CI (`fail-on: high`). The reference this forks (Curve `VotingEscrow`, via
+Velodrome) is audited; the diffs are enumerated at the top of `VotingEscrow.sol`.
+
+## Reporting
+
+Please report vulnerabilities privately to the maintainers before disclosure. An Immunefi
+programme is planned for launch (SPEC §7).

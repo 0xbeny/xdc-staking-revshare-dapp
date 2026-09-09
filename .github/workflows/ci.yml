@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    name: Build · Lint · Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Format check
+        run: forge fmt --check
+      - name: Lint (zero findings policy)
+        run: |
+          forge lint src/ test/ script/ 2>&1 | tee lint.log
+          ! grep -qE '^(warning|note)\[' lint.log
+      - name: Build
+        run: forge build --sizes
+
+  test:
+    name: Unit · E2E · Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Run tests
+        run: forge test --no-match-path "test/invariant/*" -vv
+
+  invariants:
+    name: Invariants (fail_on_revert)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Run invariant suite
+        env:
+          FOUNDRY_INVARIANT_FAIL_ON_REVERT: "true"
+          FOUNDRY_INVARIANT_RUNS: "256"
+          FOUNDRY_INVARIANT_DEPTH: "64"
+        run: forge test --match-path "test/invariant/*" -vv
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+      - name: Coverage (escrow + distributor must stay fully covered)
+        run: |
+          forge coverage --no-match-path "test/invariant/*" --report summary --report lcov \
+            --no-match-coverage "(script|test|mocks)" | tee coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: crytic/slither-action@v0.4.0
+        id: slither
+        with:
+          target: .
+          slither-args: --filter-paths "lib|test|script" --exclude-dependencies
+          fail-on: high
+          sarif: results.sarif
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() && steps.slither.outputs.sarif != ''
+        with:
+          sarif_file: ${{ steps.slither.outputs.sarif }}

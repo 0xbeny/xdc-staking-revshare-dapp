@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Test} from "forge-std/Test.sol";
 
+import {VeXDCDeployer} from "../script/VeXDCDeployer.sol";
 import {FeeDistributor} from "../src/FeeDistributor.sol";
 import {RevenueRegistry} from "../src/RevenueRegistry.sol";
 import {VotingEscrow} from "../src/VotingEscrow.sol";
@@ -16,7 +16,6 @@ import {PushAdapter} from "../src/adapters/PushAdapter.sol";
 import {ZodiacFeeModule} from "../src/adapters/ZodiacFeeModule.sol";
 import {VeVotesAdapter} from "../src/governance/VeVotesAdapter.sol";
 import {IRevenueRegistry} from "../src/interfaces/IRevenueRegistry.sol";
-import {EpochTime} from "../src/libraries/EpochTime.sol";
 
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockSafe} from "./mocks/MockSafe.sol";
@@ -67,37 +66,32 @@ abstract contract Base is Test {
         wxdc = new MockWXDC();
         usdc = new MockERC20("USD Coin", "USDC", 6);
 
-        // 1. Registry proxy.
-        RevenueRegistry registryImpl = new RevenueRegistry();
-        registry = RevenueRegistry(
-            address(new ERC1967Proxy(address(registryImpl), abi.encodeCall(RevenueRegistry.initialize, (timelock))))
-        );
+        // Same wiring as the mainnet script: temporary admin deploys, wires, hands over, renounces.
+        address[] memory rewardTokens = new address[](2);
+        rewardTokens[0] = address(wxdc);
+        rewardTokens[1] = address(usdc);
 
-        // 2. Distributor proxy (deployed before the escrow, which needs it as an immutable
-        //    penalty destination).
-        FeeDistributor distributorImpl = new FeeDistributor();
-        distributor = FeeDistributor(
-            address(
-                new ERC1967Proxy(
-                    address(distributorImpl), abi.encodeCall(FeeDistributor.initialize, (timelock, address(registry)))
-                )
-            )
-        );
+        VeXDCDeployer.Config memory config = VeXDCDeployer.Config({
+            wxdc: address(wxdc),
+            timelock: timelock,
+            guardian: guardian,
+            treasury: treasury,
+            keeper: keeper,
+            maxPenaltyBps: 5000,
+            penaltySplitBps: 2000,
+            rewardTokens: rewardTokens
+        });
 
-        // 3. Immutable escrow.
-        escrow = new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 2000);
+        VeXDCDeployer.Deployment memory d = VeXDCDeployer.deploy(config, address(this));
+        VeXDCDeployer.handOverToGovernance(d, config, address(this));
+        string memory failure = VeXDCDeployer.verify(d, config, address(this));
+        require(bytes(failure).length == 0, failure);
 
-        vm.startPrank(timelock);
-        registry.setDistributor(address(distributor));
-        distributor.setEscrow(address(escrow));
-        distributor.addRewardToken(address(wxdc));
-        distributor.addRewardToken(address(usdc));
-        distributor.grantRole(distributor.KEEPER_ROLE(), keeper);
-        distributor.grantRole(distributor.PAUSER_ROLE(), guardian);
-        vm.stopPrank();
-
-        zap = new ZapDepositor(address(wxdc), address(escrow));
-        votes = new VeVotesAdapter(address(escrow));
+        registry = d.registry;
+        distributor = d.distributor;
+        escrow = d.escrow;
+        zap = d.zap;
+        votes = d.votes;
 
         _deployAdapters();
         _fund();

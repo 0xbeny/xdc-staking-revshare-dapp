@@ -7,7 +7,6 @@ import {RevenueAdapterBase} from "../../src/adapters/RevenueAdapterBase.sol";
 import {ZodiacFeeModule} from "../../src/adapters/ZodiacFeeModule.sol";
 import {Base} from "../Base.t.sol";
 import {MockSafe} from "../mocks/MockSafe.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract AdaptersTest is Base {
     function setUp() public override {

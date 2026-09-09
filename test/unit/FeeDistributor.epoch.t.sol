@@ -64,11 +64,11 @@ contract FeeDistributorEpochTest is Base {
         _notifyExact(address(usdc), 4000e6);
         _nextEpoch();
 
-        uint256 got_a = _claim(alice, a, address(usdc));
-        uint256 got_b = _claim(bob, b, address(usdc));
-        assertApproxEqAbs(got_a, 3000e6, 1);
-        assertApproxEqAbs(got_b, 1000e6, 1);
-        assertLe(got_a + got_b, 4000e6, "never over-distribute");
+        uint256 gotAlice = _claim(alice, a, address(usdc));
+        uint256 gotBob = _claim(bob, b, address(usdc));
+        assertApproxEqAbs(gotAlice, 3000e6, 1);
+        assertApproxEqAbs(gotBob, 1000e6, 1);
+        assertLe(gotAlice + gotBob, 4000e6, "never over-distribute");
     }
 
     /// @dev Longer locks earn more per unit of principal — time-weighting, not size-weighting.

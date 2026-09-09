@@ -2,7 +2,6 @@
 pragma solidity 0.8.28;
 
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
-import {EpochTime} from "../../src/libraries/EpochTime.sol";
 import {Base} from "../Base.t.sol";
 import {MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
 

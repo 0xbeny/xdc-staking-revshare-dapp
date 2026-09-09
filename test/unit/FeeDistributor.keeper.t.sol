@@ -44,6 +44,8 @@ contract FeeDistributorKeeperTest is Base {
         vm.warp(nextStart);
         escrow.checkpoint();
 
+        // Mirrors the contract's truncated-slope formula exactly.
+        // forge-lint: disable-next-line(divide-before-multiply)
         uint256 full = (100_000 ether / MAX_LOCK) * MAX_LOCK;
         assertApproxEqRel(escrow.totalSupplyAtWeek(nextStart), full, 1e15, "snapshotted at full weight");
     }

@@ -18,6 +18,7 @@ contract VotingEscrowWeightTest is Base {
         assertGt(lock.end - block.timestamp, MAX_LOCK, "setup: unlock must overshoot MAX_LOCK");
 
         uint256 weight = escrow.balanceOfNFT(tokenId);
+        // forge-lint: disable-next-line(divide-before-multiply)
         assertEq(weight, (amount / MAX_LOCK) * MAX_LOCK, "weight is clamped at exactly 1.0x");
         assertLe(weight, amount, "invariant: weight <= principal");
     }
@@ -127,6 +128,7 @@ contract VotingEscrowWeightTest is Base {
 
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
+        // forge-lint: disable-next-line(divide-before-multiply)
         assertEq(escrow.balanceOfNFT(tokenId), (100_000 ether / MAX_LOCK) * MAX_LOCK);
     }
 

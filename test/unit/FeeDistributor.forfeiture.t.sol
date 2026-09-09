@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Base} from "../Base.t.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract FeeDistributorForfeitureTest is Base {
     uint256 internal a;
@@ -192,7 +193,6 @@ contract FeeDistributorForfeitureTest is Base {
     }
 
     function _balance(address token, address who) internal view returns (uint256) {
-        (, bytes memory ret) = token.staticcall(abi.encodeWithSignature("balanceOf(address)", who));
-        return abi.decode(ret, (uint256));
+        return IERC20(token).balanceOf(who);
     }
 }

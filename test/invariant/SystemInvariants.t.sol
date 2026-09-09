@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
 import {Base} from "../Base.t.sol";
 import {Handler} from "./Handler.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice The named invariant set from spec §7, asserted against randomised action sequences.
 contract SystemInvariantsTest is Base {
@@ -131,7 +132,6 @@ contract SystemInvariantsTest is Base {
     }
 
     function _balanceOf(address token, address who) internal view returns (uint256) {
-        (, bytes memory ret) = token.staticcall(abi.encodeWithSignature("balanceOf(address)", who));
-        return abi.decode(ret, (uint256));
+        return IERC20(token).balanceOf(who);
     }
 }
