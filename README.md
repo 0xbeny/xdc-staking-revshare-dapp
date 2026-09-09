@@ -31,6 +31,7 @@ script/
 test/
   unit/  e2e/  fuzz/  invariant/
 docs/
+  WHITEPAPER.md             shareable overview — motivation, mechanism, security model
   SPEC.md  ARCHITECTURE.md  DEPLOYMENT.md  OPERATIONS.md  INTEGRATION.md  SECURITY.md
   USER_FLOWS.md             concrete locker scenarios (deposit → claim → exit)
   adapters/                 per-mode dApp integration (A / B / B2 / B3 / C)
