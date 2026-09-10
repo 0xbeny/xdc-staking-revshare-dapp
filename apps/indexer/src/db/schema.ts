@@ -115,6 +115,8 @@ export const contributions = pgTable(
     adapter: text("adapter").notNull(),
     token: text("token").notNull(),
     amount: u256("amount").notNull(),
+    /** Distribution epoch from FeeDistributor.RevenueNotified (null for legacy rows). */
+    epoch: u256("epoch"),
     blockNumber: u256("block_number").notNull(),
     txHash: text("tx_hash").notNull(),
     logIndex: integer("log_index").notNull().default(0),

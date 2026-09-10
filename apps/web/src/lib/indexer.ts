@@ -82,21 +82,60 @@ export async function fetchOwnerPositions(address: string): Promise<IndexerPosit
   return Array.isArray(data) ? data : (data.positions ?? []);
 }
 
+export type ProtocolStakerPosition = {
+  tokenId: string;
+  amount: string;
+  weight?: string;
+  unlockTime: number;
+  shareBps: number;
+  majority?: boolean;
+};
+
 export type ProtocolStaker = {
   owner: string;
   amount: string;
+  /** Omitted on older indexer builds — client estimates from locks. */
+  weight?: string;
   unlockTime: number;
   positionCount: number;
   shareBps: number;
+  positions?: ProtocolStakerPosition[];
 };
 
 export type ProtocolStakers = {
   stakers: ProtocolStaker[];
   totalAmount: string;
+  /** Omitted on older indexer builds. */
+  totalWeight?: string;
   positionCount: number;
   stakerCount: number;
 };
 
+export type ProtocolFeesByVenue = {
+  token: string | null;
+  /** Present on newer indexer builds when epoch-less contribution rows were used. */
+  legacyFallback?: boolean;
+  venues: { adapter: string; dapp: string; label: string }[];
+  epochs: {
+    epoch: number;
+    settled: boolean;
+    total: string;
+    venues: { adapter: string; dapp: string; label: string; amount: string }[];
+  }[];
+};
+
 export async function fetchProtocolStakers(): Promise<ProtocolStakers | null> {
   return indexerFetch<ProtocolStakers>("/api/protocol/stakers");
+}
+
+/** Throws on HTTP/network failure so the chart can show an error vs empty data. */
+export async function fetchProtocolFeesByVenue(): Promise<ProtocolFeesByVenue> {
+  const res = await fetch(`${indexerBase()}/api/protocol/fees-by-venue`, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Indexer fees-by-venue failed (${res.status})`);
+  }
+  return (await res.json()) as ProtocolFeesByVenue;
 }

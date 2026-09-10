@@ -7,15 +7,30 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import { formatUnits } from "viem";
-import { fetchProtocolRevenue, fetchProtocolTvl } from "@/lib/indexer";
+import {
+  fetchProtocolFeesByVenue,
+  fetchProtocolRevenue,
+  fetchProtocolTvl,
+} from "@/lib/indexer";
 import { getContractsState } from "@/lib/contracts";
 import styles from "./ProtocolCharts.module.css";
+
+const VENUE_COLORS = [
+  "var(--chart-revenue)",
+  "var(--teal-300)",
+  "#f0a060",
+  "#9b7bff",
+  "#5ec8a0",
+  "#e07090",
+  "#70b0e0",
+];
 
 function parseAmount(raw: string, decimals: number): number {
   try {
@@ -44,6 +59,11 @@ export function ProtocolCharts() {
     queryFn: fetchProtocolRevenue,
     staleTime: 30_000,
   });
+  const feesByVenue = useQuery({
+    queryKey: ["protocol-fees-by-venue"],
+    queryFn: fetchProtocolFeesByVenue,
+    staleTime: 30_000,
+  });
 
   const tvlPoints = (tvl.data ?? []).map((p) => ({
     day: p.day,
@@ -55,6 +75,22 @@ export function ProtocolCharts() {
     revenue: parseAmount(p.revenue, decimalsForToken(p.token, deployment.usdc)),
     token: p.token,
   }));
+
+  const venueMeta = feesByVenue.data?.venues ?? [];
+  const feeDecimals = decimalsForToken(feesByVenue.data?.token ?? "", deployment.usdc);
+  const stackedPoints = (feesByVenue.data?.epochs ?? []).map((ep) => {
+    const row: Record<string, string | number | boolean> = {
+      label: `e${ep.epoch}`,
+      epoch: ep.epoch,
+      settled: ep.settled,
+      total: parseAmount(ep.total, feeDecimals),
+    };
+    for (const v of venueMeta) {
+      const hit = ep.venues.find((x) => x.adapter === v.adapter);
+      row[v.adapter] = hit ? parseAmount(hit.amount, feeDecimals) : 0;
+    }
+    return row;
+  });
 
   return (
     <div className={styles.stack}>
@@ -86,12 +122,12 @@ export function ProtocolCharts() {
                 <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
                 <XAxis
                   dataKey="day"
-                  tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
                   axisLine={false}
                   tickLine={false}
                   width={52}
@@ -113,6 +149,74 @@ export function ProtocolCharts() {
                   strokeWidth={2}
                 />
               </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </section>
+
+      <section className={styles.panel} aria-labelledby="fees-venue-title">
+        <div className={styles.head}>
+          <div className={styles.headText}>
+            <h3 id="fees-venue-title" className={styles.title}>
+              Fees by venue
+            </h3>
+            <p className={styles.subhead}>
+              {feesByVenue.data?.legacyFallback
+                ? "Venue totals from indexed contributions (epoch tagging pending)"
+                : "Stacked share of notified fees per epoch"}
+            </p>
+          </div>
+        </div>
+        {feesByVenue.isLoading && <p className={styles.empty}>Loading fees…</p>}
+        {feesByVenue.isError && (
+          <p className={styles.empty}>Fee breakdown unavailable from the indexer.</p>
+        )}
+        {!feesByVenue.isLoading && !feesByVenue.isError && stackedPoints.length === 0 && (
+          <p className={styles.empty}>No venue fees indexed yet.</p>
+        )}
+        {stackedPoints.length > 0 && venueMeta.length > 0 && (
+          <div className={styles.chart}>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={stackedPoints} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--bg-raised)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    color: "var(--ink-primary)",
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: 13, color: "var(--ink-muted)" }}
+                  formatter={(value) => {
+                    const meta = venueMeta.find((v) => v.adapter === value);
+                    return meta?.label ?? value;
+                  }}
+                />
+                {venueMeta.map((v, i) => (
+                  <Bar
+                    key={v.adapter}
+                    dataKey={v.adapter}
+                    name={v.adapter}
+                    stackId="fees"
+                    fill={VENUE_COLORS[i % VENUE_COLORS.length]}
+                    radius={i === venueMeta.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                  />
+                ))}
+              </BarChart>
             </ResponsiveContainer>
           </div>
         )}
@@ -140,12 +244,12 @@ export function ProtocolCharts() {
                 <CartesianGrid stroke="var(--chart-grid)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: "var(--ink-muted)", fontSize: 12 }}
+                  tick={{ fill: "var(--ink-muted)", fontSize: 13 }}
                   axisLine={false}
                   tickLine={false}
                   width={52}

@@ -14,6 +14,7 @@ import {
 } from "wagmi";
 import { AddressLink } from "@/components/AddressLink";
 import { Reveal } from "@/components/Reveal";
+import { RoleRoster } from "@/components/RoleRoster";
 import { StatusPill } from "@/components/StatusPill";
 import { contractsReady, getContractsState } from "@/lib/contracts";
 import {
@@ -417,6 +418,10 @@ export function AdminActions() {
         <StatusPill tone={paused ? "danger" : "ok"}>
           {paused ? "Paused" : "Live"}
         </StatusPill>
+      </Reveal>
+
+      <Reveal delay={0.04}>
+        <RoleRoster />
       </Reveal>
 
       <div className={styles.grid}>

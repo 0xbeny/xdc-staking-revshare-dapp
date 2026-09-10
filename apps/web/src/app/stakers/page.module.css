@@ -1,0 +1,17 @@
+/* Page-scoped type bump for /stakers (composes dashboard layout classes). */
+
+.sectionTitle {
+  font-size: clamp(1.3rem, 3.2vw, 1.55rem);
+}
+
+.sectionLead {
+  font-size: 1rem;
+  max-width: 44rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .sectionLead {
+    font-size: 0.95rem;
+  }
+}

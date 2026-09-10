@@ -29,6 +29,9 @@ export default function HomePage() {
           <code>GET /api/protocol/stakers</code>
         </li>
         <li>
+          <code>GET /api/protocol/fees-by-venue</code>
+        </li>
+        <li>
           <code>GET /api/adapters</code>
         </li>
         <li>

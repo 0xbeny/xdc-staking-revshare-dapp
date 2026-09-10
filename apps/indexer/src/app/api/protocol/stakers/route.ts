@@ -13,6 +13,7 @@ export async function GET(request: Request) {
   const db = getDb();
   const rows = await db
     .select({
+      tokenId: positions.tokenId,
       owner: positions.owner,
       amount: positions.amount,
       unlockTime: positions.unlockTime,
@@ -21,12 +22,13 @@ export async function GET(request: Request) {
     .from(positions)
     .where(and(eq(positions.chainId, chainId), eq(positions.closed, false)));
 
-  const { stakers, totalAmount, positionCount } = aggregateStakers(rows);
+  const { stakers, totalAmount, totalWeight, positionCount } = aggregateStakers(rows);
 
   return jsonWithCors(
     {
       stakers,
       totalAmount,
+      totalWeight,
       positionCount,
       stakerCount: stakers.length,
     },

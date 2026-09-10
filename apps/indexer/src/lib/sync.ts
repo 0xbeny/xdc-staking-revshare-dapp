@@ -410,8 +410,21 @@ async function processFeeDistributorLog(
 
   switch (decoded.eventName) {
     case "RevenueNotified": {
-      const { token, amount, distributionEpoch } = decoded.args;
+      const { token, adapter, amount, distributionEpoch } = decoded.args;
       await upsertEpochRevenue(db, chainId, token, distributionEpoch, amount);
+      await db
+        .insert(contributions)
+        .values({
+          chainId,
+          adapter: normalizeAddress(adapter),
+          token: normalizeAddress(token),
+          amount: amount.toString(10),
+          epoch: distributionEpoch.toString(10),
+          blockNumber: toBlockString(blockNumber),
+          txHash,
+          logIndex,
+        })
+        .onConflictDoNothing();
       break;
     }
     case "ForfeitureSynced": {

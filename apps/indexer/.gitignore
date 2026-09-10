@@ -2,6 +2,8 @@
 .next
 .env
 .env.local
-drizzle/meta
+# Keep journal in git so Vercel `drizzle-kit migrate` finds pending SQL.
+drizzle/meta/*
+!drizzle/meta/_journal.json
 *.log
 .DS_Store

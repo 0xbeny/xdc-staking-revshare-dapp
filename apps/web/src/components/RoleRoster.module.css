@@ -1,0 +1,99 @@
+.panel {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.05rem 1.1rem 1.2rem;
+}
+
+.head {
+  margin-bottom: 0.9rem;
+}
+
+.h2 {
+  margin: 0 0 0.3rem;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  color: var(--ink-bright);
+}
+
+.hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.hint code {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  color: var(--teal-300);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.card {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 0.9rem;
+}
+
+.h3 {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--ink-bright);
+}
+
+.target {
+  margin: 0 0 0.65rem;
+}
+
+.roleList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.roleRow {
+  display: grid;
+  gap: 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.roleName {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ink-bright);
+}
+
+.desc {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+  line-height: 1.35;
+}
+
+.members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.empty {
+  color: var(--ink-faint);
+  font-style: italic;
+  font-size: 0.82rem;
+}
