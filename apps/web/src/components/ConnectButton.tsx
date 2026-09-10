@@ -1,6 +1,7 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
+import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { shortAddress } from "@/lib/format";
 import { getConfiguredChainId, getAppChain } from "@/lib/contracts";
@@ -9,6 +10,14 @@ import styles from "./ConnectButton.module.css";
 
 export function ConnectButton() {
   return privyEnabled ? <PrivyConnectButton /> : <LegacyConnectButton />;
+}
+
+function IdleButton({ label }: { label: string }) {
+  return (
+    <button type="button" className={`${styles.btn} ${styles.primary}`} disabled>
+      {label}
+    </button>
+  );
 }
 
 /** Shared "wrong network" prompt. Returns null when the network is correct. */
@@ -33,16 +42,20 @@ function useWrongNetworkButton() {
 }
 
 /**
- * Privy path: one modal for email, socials, embedded wallets, browser
+ * Privy path: one modal for email OTP, embedded wallets, browser
  * extensions, and mobile wallets via WalletConnect. Address/chain state
  * still flows through wagmi (via @privy-io/wagmi).
  */
 function PrivyConnectButton() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const { ready, authenticated, login, logout } = usePrivy();
   const { address } = useAccount();
   const appChain = getAppChain();
-
   const wrongNetwork = useWrongNetworkButton();
+
+  // First paint must match SSR (no wallet session on the server).
+  if (!mounted) return <IdleButton label="Loading…" />;
   if (wrongNetwork) return wrongNetwork;
 
   if (authenticated && address) {
@@ -62,12 +75,7 @@ function PrivyConnectButton() {
   }
 
   if (authenticated && !address) {
-    // Logged in; embedded/external wallet still attaching to wagmi.
-    return (
-      <button type="button" className={`${styles.btn} ${styles.primary}`} disabled>
-        Connecting…
-      </button>
-    );
+    return <IdleButton label="Connecting…" />;
   }
 
   return (
@@ -84,13 +92,16 @@ function PrivyConnectButton() {
 
 /** Fallback when NEXT_PUBLIC_PRIVY_APP_ID is not set: injected + WalletConnect. */
 function LegacyConnectButton() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const { address, isConnected } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const expected = getConfiguredChainId();
   const appChain = getAppChain();
-
   const wrongNetwork = useWrongNetworkButton();
+
+  if (!mounted) return <IdleButton label="Connect wallet" />;
   if (wrongNetwork) return wrongNetwork;
 
   if (isConnected && address) {

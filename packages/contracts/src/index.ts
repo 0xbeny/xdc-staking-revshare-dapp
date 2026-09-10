@@ -11,3 +11,6 @@ export {
 } from "./deployments.js";
 export { abis } from "./abis/index.js";
 export type { ContractName } from "./abis/index.js";
+export { bytecodes, FeeSplitterBytecode, PushAdapterBytecode } from "./bytecode/index.js";
+export type { DeployableContractName } from "./bytecode/index.js";
+export { BPS, committedFromSkim } from "./revenueMath.js";

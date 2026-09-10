@@ -35,8 +35,8 @@ export const privyEnabled = privyAppId.length > 0;
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 
 export const privyConfig: PrivyClientConfig = {
-  // Email + socials + external wallets in one modal.
-  loginMethods: ["email", "google", "twitter", "discord", "wallet"],
+  // Email OTP + external wallets (MetaMask / Rabby / OKX / WalletConnect).
+  loginMethods: ["email", "wallet"],
   appearance: {
     theme: "dark",
     accentColor: "#2dd4bf",
@@ -51,7 +51,7 @@ export const privyConfig: PrivyClientConfig = {
     ],
     showWalletLoginFirst: false,
   },
-  // Users signing in with email/social get an embedded wallet automatically.
+  // Users signing in with email get an embedded wallet automatically.
   embeddedWallets: {
     ethereum: { createOnLogin: "users-without-wallets" },
   },

@@ -1,12 +1,14 @@
 "use client";
 
-import { abis } from "@vexdc/contracts";
+import { abis, committedFromSkim } from "@vexdc/contracts";
 import { useEffect, useMemo, useState } from "react";
 import type { Address, Hex } from "viem";
-import { isAddress } from "viem";
+import { formatUnits, isAddress, parseUnits } from "viem";
 import {
   useAccount,
+  usePublicClient,
   useReadContract,
+  useReadContracts,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
@@ -23,6 +25,58 @@ import {
   ZERO_BYTES32,
 } from "@/lib/roles";
 import styles from "./AdminActions.module.css";
+
+/** Minimal MockERC20 surface used on Apothem for mint+skim rehearsals. */
+const mockErc20Abi = [
+  {
+    type: "function",
+    name: "mint",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "decimals",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint8" }],
+  },
+] as const;
+
+const adapterViewAbi = [
+  {
+    type: "function",
+    name: "DISTRIBUTOR",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
+    name: "COMMITTED_BPS",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint16" }],
+  },
+  {
+    type: "function",
+    name: "DAPP_TREASURY",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+  {
+    type: "function",
+    name: "SOURCE",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "address" }],
+  },
+] as const;
 
 function TxStatus({
   hash,
@@ -73,12 +127,27 @@ function ActionCard({
   );
 }
 
+function modeLabel(mode: number): string {
+  return ADAPTER_MODES.find((m) => m.value === mode)?.label ?? `Mode ${mode}`;
+}
+
+type AdapterInfoRow = {
+  dapp: Address;
+  mode: number;
+  committedBps: number;
+  version: number;
+  active: boolean;
+  termsHash: Hex;
+  registeredAt: bigint;
+};
+
 export function AdminActions() {
   const state = getContractsState();
   const ready = contractsReady(state);
   const d = state.deployment;
   const chainId = state.chainId;
   const { address, isConnected } = useAccount();
+  const publicClient = usePublicClient();
 
   const { data: isPauser } = useReadContract({
     address: d.systemAccess,
@@ -121,11 +190,32 @@ export function AdminActions() {
     functionName: "paused",
     query: { enabled: ready },
   });
-  const { data: adapters } = useReadContract({
+  const { data: adapters, refetch: refetchAdapters } = useReadContract({
     address: d.revenueRegistry,
     abi: abis.RevenueRegistry,
     functionName: "allAdapters",
     query: { enabled: ready },
+  });
+
+  const adapterList = useMemo(
+    () => ((adapters as Address[] | undefined) ?? []) as Address[],
+    [adapters],
+  );
+
+  const adapterInfoContracts = useMemo(
+    () =>
+      adapterList.map((adapter) => ({
+        address: d.revenueRegistry,
+        abi: abis.RevenueRegistry,
+        functionName: "adapterInfo" as const,
+        args: [adapter] as const,
+      })),
+    [adapterList, d.revenueRegistry],
+  );
+
+  const { data: adapterInfos, refetch: refetchInfos } = useReadContracts({
+    contracts: adapterInfoContracts,
+    query: { enabled: ready && adapterList.length > 0 },
   });
 
   const isEscrowTimelock =
@@ -148,10 +238,12 @@ export function AdminActions() {
 
   useEffect(() => {
     if (isSuccess) {
+      void refetchAdapters();
+      void refetchInfos();
       const t = setTimeout(() => reset(), 4000);
       return () => clearTimeout(t);
     }
-  }, [isSuccess, reset]);
+  }, [isSuccess, reset, refetchAdapters, refetchInfos]);
 
   // Form state
   const [rewardToken, setRewardToken] = useState("");
@@ -173,6 +265,112 @@ export function AdminActions() {
   const [revokeTarget, setRevokeTarget] = useState<"feeDistributor" | "revenueRegistry">("feeDistributor");
   const [revokeRole, setRevokeRole] = useState<RoleKey>("KEEPER");
   const [revokeAccount, setRevokeAccount] = useState("");
+  const [registerHint, setRegisterHint] = useState<string | null>(null);
+  const [registerBlocking, setRegisterBlocking] = useState<string | null>(null);
+
+  // Simulate revenue (Apothem / mock USDC)
+  const [simAdapter, setSimAdapter] = useState("");
+  const [simAmount, setSimAmount] = useState("1000");
+  const [simStep, setSimStep] = useState<"idle" | "minted">("idle");
+  const usdc = d.usdc;
+  const showSimulate = chainId === 51 && !!usdc && isAddress(usdc);
+
+  const splitterCandidates = useMemo(() => {
+    if (!adapterInfos) return [] as Address[];
+    return adapterList.filter((_, i) => {
+      const row = adapterInfos[i]?.result as AdapterInfoRow | undefined;
+      return row && Number(row.mode) === 2 && row.active;
+    });
+  }, [adapterList, adapterInfos]);
+
+  const { data: simInfo } = useReadContract({
+    address: d.revenueRegistry,
+    abi: abis.RevenueRegistry,
+    functionName: "adapterInfo",
+    args: [isAddress(simAdapter) ? (simAdapter as Address) : "0x0000000000000000000000000000000000000000"],
+    query: { enabled: ready && isAddress(simAdapter) },
+  });
+
+  const { data: usdcDecimals } = useReadContract({
+    address: usdc,
+    abi: mockErc20Abi,
+    functionName: "decimals",
+    query: { enabled: showSimulate && !!usdc },
+  });
+
+  const simBps = simInfo ? Number((simInfo as AdapterInfoRow).committedBps) : 0;
+  const simAmountWei = useMemo(() => {
+    try {
+      return parseUnits(simAmount || "0", Number(usdcDecimals ?? 6));
+    } catch {
+      return 0n;
+    }
+  }, [simAmount, usdcDecimals]);
+  const expectedCommitted =
+    simBps > 0 && simAmountWei > 0n ? committedFromSkim(simAmountWei, simBps) : 0n;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function check() {
+      setRegisterHint(null);
+      setRegisterBlocking(null);
+      if (!isAddress(adapterAddr) || !publicClient) return;
+      const code = await publicClient.getBytecode({ address: adapterAddr as Address });
+      if (cancelled) return;
+      if (!code || code === "0x") {
+        setRegisterBlocking("No contract code at adapter address.");
+        return;
+      }
+      try {
+        const [distributor, bps, treasury] = await Promise.all([
+          publicClient.readContract({
+            address: adapterAddr as Address,
+            abi: adapterViewAbi,
+            functionName: "DISTRIBUTOR",
+          }),
+          publicClient.readContract({
+            address: adapterAddr as Address,
+            abi: adapterViewAbi,
+            functionName: "COMMITTED_BPS",
+          }),
+          publicClient.readContract({
+            address: adapterAddr as Address,
+            abi: adapterViewAbi,
+            functionName: "DAPP_TREASURY",
+          }),
+        ]);
+        if (cancelled) return;
+        if ((distributor as Address).toLowerCase() !== d.feeDistributor.toLowerCase()) {
+          setRegisterBlocking(
+            `DISTRIBUTOR mismatch: adapter=${distributor}, expected=${d.feeDistributor}`,
+          );
+          return;
+        }
+        const formBps = Number(committedBps || "0");
+        if (Number(bps) !== formBps) {
+          setRegisterBlocking(
+            `Committed bps mismatch: adapter immutable=${bps}, form=${formBps}`,
+          );
+          return;
+        }
+        setAdapterDapp((prev) => (prev || !isAddress(treasury as string) ? prev : (treasury as string)));
+        const modeName = modeLabel(adapterMode);
+        setRegisterHint(
+          `On-chain checks OK (code, DISTRIBUTOR, COMMITTED_BPS=${bps}). Confirm mode ${modeName} matches the deployed adapter type.`,
+        );
+      } catch {
+        if (!cancelled) {
+          setRegisterHint(
+            "Contract code present, but DISTRIBUTOR/COMMITTED_BPS not readable — verify mode/bps manually.",
+          );
+        }
+      }
+    }
+    void check();
+    return () => {
+      cancelled = true;
+    };
+  }, [adapterAddr, adapterMode, committedBps, publicClient, d.feeDistributor]);
 
   if (!ready) {
     return <p className={styles.banner}>Contracts not live on this chain.</p>;
@@ -180,6 +378,12 @@ export function AdminActions() {
 
   const targetAddress = (key: "feeDistributor" | "revenueRegistry") =>
     key === "feeDistributor" ? d.feeDistributor : d.revenueRegistry;
+
+  const canRegister =
+    isAddress(adapterAddr) &&
+    isAddress(adapterDapp) &&
+    !registerBlocking &&
+    Number(committedBps || "0") > 0;
 
   return (
     <div className={styles.wrap}>
@@ -441,13 +645,68 @@ export function AdminActions() {
           </ActionCard>
         </Reveal>
 
-        <Reveal delay={0.18}>
+        <Reveal className={styles.span2} delay={0.18}>
           <ActionCard
             title="Adapters"
-            description="REGISTRY_ADMIN registers and toggles adapters. Deploy the adapter contract first, then register."
+            description="REGISTRY_ADMIN registers and toggles adapters. Partners deploy from /integrate; you whitelist here."
             allowed={Boolean(isRegistryAdmin)}
             need="Need REGISTRY_ADMIN"
           >
+            <h4 className={styles.h4}>Listed dApps</h4>
+            {adapterList.length === 0 ? (
+              <p className={styles.muted}>No adapters registered yet.</p>
+            ) : (
+              <div className={styles.tableWrap}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Adapter</th>
+                      <th>dApp</th>
+                      <th>Mode</th>
+                      <th>bps</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adapterList.map((adapter, i) => {
+                      const info = adapterInfos?.[i]?.result as AdapterInfoRow | undefined;
+                      const dapp = info?.dapp;
+                      const mode = info ? Number(info.mode) : undefined;
+                      const bps = info ? Number(info.committedBps) : undefined;
+                      const active = info?.active;
+                      return (
+                        <tr key={adapter}>
+                          <td>
+                            <AddressLink address={adapter} chainId={chainId} />
+                          </td>
+                          <td>
+                            {dapp ? (
+                              <AddressLink address={dapp} chainId={chainId} />
+                            ) : (
+                              "…"
+                            )}
+                          </td>
+                          <td>{mode !== undefined ? modeLabel(mode) : "…"}</td>
+                          <td>{bps !== undefined ? bps : "…"}</td>
+                          <td>
+                            {active === undefined ? (
+                              "…"
+                            ) : (
+                              <StatusPill tone={active ? "ok" : "muted"}>
+                                {active ? "Active" : "Inactive"}
+                              </StatusPill>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <hr className={styles.hr} />
+            <h4 className={styles.h4}>Register</h4>
             <label className={styles.label}>
               Adapter address
               <input
@@ -488,10 +747,12 @@ export function AdminActions() {
                 />
               </label>
             </div>
+            {registerBlocking ? <p className={styles.err}>{registerBlocking}</p> : null}
+            {registerHint && !registerBlocking ? <p className={styles.ok}>{registerHint}</p> : null}
             <button
               type="button"
               className={styles.primaryBtn}
-              disabled={!isAddress(adapterAddr) || !isAddress(adapterDapp)}
+              disabled={!canRegister}
               onClick={() =>
                 writeContract({
                   address: d.revenueRegistry,
@@ -519,7 +780,7 @@ export function AdminActions() {
                 onChange={(e) => setToggleAdapter(e.target.value)}
               >
                 <option value="">Select adapter…</option>
-                {((adapters as Address[] | undefined) ?? []).map((a) => (
+                {adapterList.map((a) => (
                   <option key={a} value={a}>
                     {a}
                   </option>
@@ -560,6 +821,91 @@ export function AdminActions() {
             </div>
           </ActionCard>
         </Reveal>
+
+        {showSimulate ? (
+          <Reveal className={styles.span2} delay={0.2}>
+            <ActionCard
+              title="Simulate revenue (Apothem)"
+              description="Mint mock USDC to a registered FeeSplitter, then skim. Expected committed = amount × bps / 10000."
+              allowed={isConnected}
+              need="Connect wallet"
+            >
+              <label className={styles.label}>
+                FeeSplitter
+                <select
+                  className={styles.input}
+                  value={simAdapter}
+                  onChange={(e) => {
+                    setSimAdapter(e.target.value);
+                    setSimStep("idle");
+                  }}
+                >
+                  <option value="">Select registered SPLITTER…</option>
+                  {splitterCandidates.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.label}>
+                Amount (USDC)
+                <input
+                  className={styles.input}
+                  value={simAmount}
+                  onChange={(e) => setSimAmount(e.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
+              <p className={styles.hint}>
+                Token:{" "}
+                {usdc ? <AddressLink address={usdc} chainId={chainId} /> : "—"} · bps {simBps || "—"} ·
+                expected committed{" "}
+                {simBps
+                  ? `${formatUnits(expectedCommitted, Number(usdcDecimals ?? 6))} USDC`
+                  : "—"}
+              </p>
+              <div className={styles.row}>
+                <button
+                  type="button"
+                  className={styles.secondaryBtn}
+                  disabled={!isAddress(simAdapter) || simAmountWei <= 0n || !usdc}
+                  onClick={() => {
+                    writeContract({
+                      address: usdc as Address,
+                      abi: mockErc20Abi,
+                      functionName: "mint",
+                      args: [simAdapter as Address, simAmountWei],
+                    });
+                    setSimStep("minted");
+                  }}
+                >
+                  1. Mint to splitter
+                </button>
+                <button
+                  type="button"
+                  className={styles.primaryBtn}
+                  disabled={!isAddress(simAdapter) || !usdc}
+                  onClick={() =>
+                    writeContract({
+                      address: simAdapter as Address,
+                      abi: abis.FeeSplitter,
+                      functionName: "skim",
+                      args: [usdc as Address],
+                    })
+                  }
+                >
+                  2. Skim USDC
+                </button>
+              </div>
+              {simStep === "minted" ? (
+                <p className={styles.muted}>
+                  After mint confirms, skim. Then settle the epoch and check claims / indexer.
+                </p>
+              ) : null}
+            </ActionCard>
+          </Reveal>
+        ) : null}
 
         <Reveal className={styles.span2} delay={0.22}>
           <ActionCard

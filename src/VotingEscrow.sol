@@ -130,6 +130,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Sole contract allowed to mint locks (`ZapDepositor`). One-shot after deploy.
     address public depositor;
 
+    /// @notice May raise/lower `stakingCap` alongside the timelock (typically the guardian).
+    address public capGuardian;
+
+    /// @notice Global ceiling on `totalLocked`. Default uncapped (`type(uint256).max`).
+    uint256 public stakingCap;
+
     /// @notice When true, third parties may create locks for this address via the zap gift paths.
     /// @dev Default false — recipient must opt in before unsolicited positions can be appended.
     mapping(address account => bool) public acceptsLockGifts;
@@ -219,6 +225,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     event PenaltySplitBpsSet(uint256 oldValue, uint256 newValue);
     event TierSet(address indexed account, Tier tier);
     event AcceptsLockGiftsSet(address indexed account, bool enabled);
+    event StakingCapSet(uint256 oldValue, uint256 newValue);
+    event CapGuardianSet(address indexed previous, address indexed next);
     event OperatorSet(address indexed owner, address indexed operator, bool approved);
     event TimelockTransferStarted(address indexed from, address indexed to);
     event TimelockTransferred(address indexed from, address indexed to);
@@ -229,11 +237,14 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     error NotTimelock();
     error NotAuthorized();
+    error NotCapAdmin();
     error NotDepositor();
     error DepositorAlreadySet();
     error ZeroAddress();
     error ZeroAmount();
     error AmountBelowMinimum();
+    error StakingCapExceeded();
+    error StakingCapTooLow();
     error IncompleteTransfer();
     error DurationNotWeekAligned();
     error DurationOutOfRange();
@@ -260,10 +271,14 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         address distributor_,
         address treasury_,
         address timelock_,
+        address capGuardian_,
         uint256 maxPenaltyBps_,
         uint256 penaltySplitBps_
     ) ERC721("veXDC Staking Position", "veXDC") {
-        if (token_ == address(0) || distributor_ == address(0) || treasury_ == address(0) || timelock_ == address(0)) {
+        if (
+            token_ == address(0) || distributor_ == address(0) || treasury_ == address(0) || timelock_ == address(0)
+                || capGuardian_ == address(0)
+        ) {
             revert ZeroAddress();
         }
         if (maxPenaltyBps_ > HARD_MAX_PENALTY_BPS || penaltySplitBps_ > HARD_MAX_PENALTY_SPLIT_BPS) {
@@ -273,10 +288,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         distributor = distributor_;
         treasury = treasury_;
         timelock = timelock_;
+        capGuardian = capGuardian_;
         bootstrapAdmin = _msgSender();
         maxPenaltyBps = maxPenaltyBps_;
         penaltySplitBps = penaltySplitBps_;
         withdrawalCooldown = 1 days;
+        stakingCap = type(uint256).max;
 
         pointHistory[0] = GlobalPoint({bias: 0, slope: 0, ts: block.timestamp.toUint64()});
     }
@@ -326,6 +343,30 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 oldValue = withdrawalCooldown;
         withdrawalCooldown = newValue;
         emit WithdrawalCooldownSet(oldValue, newValue);
+    }
+
+    /// @notice Sets the global TVL ceiling. Timelock or `capGuardian` may call.
+    /// @dev Decreases require `totalLocked < newCap` so the cap can never cut under live stake.
+    function setStakingCap(uint256 newCap) external {
+        if (_msgSender() != timelock && _msgSender() != capGuardian) {
+            revert NotCapAdmin();
+        }
+        if (newCap < stakingCap && !(totalLocked < newCap)) {
+            revert StakingCapTooLow();
+        }
+        uint256 oldValue = stakingCap;
+        stakingCap = newCap;
+        emit StakingCapSet(oldValue, newCap);
+    }
+
+    /// @notice Rotates who may administer `stakingCap` alongside the timelock.
+    function setCapGuardian(address newGuardian) external onlyTimelock {
+        if (newGuardian == address(0)) {
+            revert ZeroAddress();
+        }
+        address previous = capGuardian;
+        capGuardian = newGuardian;
+        emit CapGuardianSet(previous, newGuardian);
     }
 
     /// @notice Contract eligibility. EOAs are never listed; contracts need CUSTODIAN or WRAPPER.
@@ -727,6 +768,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (duration < MIN_LOCK || duration > MAX_LOCK) {
             revert DurationOutOfRange();
         }
+        _requireWithinStakingCap(amount);
         _requireEligible(beneficiary);
 
         uint256 unlock = EpochTime.ceilWeek(block.timestamp + duration);
@@ -764,6 +806,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (amount == 0) {
             revert ZeroAmount();
         }
+        _requireWithinStakingCap(amount);
         _requireNoExitRequest(tokenId);
         (, Lock memory oldLock) = _openLockOf(tokenId);
         if (oldLock.end <= block.timestamp) {
@@ -1001,6 +1044,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function _requireNoExitRequest(uint256 tokenId) private view {
         if (exitRequest[tokenId].kind != ExitKind.None) {
             revert ExitPending();
+        }
+    }
+
+    function _requireWithinStakingCap(uint256 additional) private view {
+        if (totalLocked + additional > stakingCap) {
+            revert StakingCapExceeded();
         }
     }
 

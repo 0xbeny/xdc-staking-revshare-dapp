@@ -6,7 +6,7 @@ Next.js 15 App Router dApp for veXDC lockers. Visual system: [`apps/web/design.m
 
 - Next.js 15, React 19, TypeScript
 - wagmi v2 + viem + TanStack Query
-- Privy (`@privy-io/react-auth` + `@privy-io/wagmi`) — email/social login,
+- Privy (`@privy-io/react-auth` + `@privy-io/wagmi`) — email OTP login,
   embedded wallets, external wallets, mobile via WalletConnect. Falls back to
   plain wagmi (injected + WalletConnect) when `NEXT_PUBLIC_PRIVY_APP_ID` is unset.
 - Recharts (earnings / protocol charts)
@@ -23,7 +23,7 @@ cp apps/web/.env.example apps/web/.env.local
 | `NEXT_PUBLIC_CHAIN_ID` | `51` |
 | `NEXT_PUBLIC_RPC_URL` | `https://rpc.apothem.network` |
 | `NEXT_PUBLIC_INDEXER_URL` | `https://your-indexer.vercel.app` |
-| `NEXT_PUBLIC_PRIVY_APP_ID` | Privy app id ([dashboard.privy.io](https://dashboard.privy.io)) — enables email/social login + Privy wallet modal |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Privy app id ([dashboard.privy.io](https://dashboard.privy.io)) — enables email OTP login + Privy wallet modal |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect cloud id (mobile wallets / QR; also used by the non-Privy fallback) |
 
 ## Scripts
@@ -58,7 +58,16 @@ Set the `NEXT_PUBLIC_*` env vars in the Vercel project (`NEXT_PUBLIC_INDEXER_URL
 | `/` | Brand hero + Zap deposit (GSAP entrance) |
 | `/dashboard` | Positions + protocol charts |
 | `/position/[tokenId]` | Manage, claim, exit |
+| `/integrate` | Partner deploy UI for FeeSplitter / PushAdapter (bytecode from `@vexdc/contracts`) |
 | `/system` | Contract registry, pause/health KPIs, SystemAccess role matrix |
-| `/admin` | Role-gated admin desk (pause, escrow params, adapters, grant/revoke) |
+| `/admin` | Role-gated admin desk (pause, escrow params, adapter whitelist + listed dApps, Apothem simulate revenue, grant/revoke) |
 
 Live reads (weight, claimable, roles) use RPC. History/charts use the indexer API.
+
+### Partner → whitelist → verify
+
+1. Partner deploys from `/integrate` and copies the adapter address.
+2. `REGISTRY_ADMIN` registers on `/admin` (sanity: code, `DISTRIBUTOR`, `COMMITTED_BPS`).
+3. On Apothem, use **Simulate revenue** or `make simulate-apothem-revenue` to mint+skim mock USDC and check `amount * bps / 10000`.
+
+After a core redeploy, refresh `packages/contracts/src/deployments.ts`, `deployments/51.json`, and web/indexer `NEXT_PUBLIC_*` / env addresses (see [DEPLOYMENT.md](DEPLOYMENT.md) Apothem section).

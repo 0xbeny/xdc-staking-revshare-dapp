@@ -38,6 +38,7 @@ Canonical Apothem WXDC: `0x56408DC41E35d3E8E92A16bc94787438df9387a1`. Deploy moc
 cast wallet import deployer --interactive    # once
 export DEPLOYER_ACCOUNT=deployer
 # TIMELOCK / GUARDIAN / KEEPER must be a *different* EOA from the deployer
+# GUARDIAN is also wired as VotingEscrow `capGuardian` (may raise/lower stakingCap)
 make deploy-apothem-mocks
 # paste USDC / REWARD_TOKENS into .env
 make deploy-apothem
@@ -49,6 +50,42 @@ targets pass `--gas-estimate-multiplier 200`. If a run still stops after
 `REVENUE_REGISTRY_IMPL` and run `make deploy-apothem-continue`.
 
 Live addresses: [`deployments/51.json`](../deployments/51.json).
+
+### Full Apothem redeploy runbook (stakingCap-aware escrow)
+
+Use this when VotingEscrow (or the full stack) must be replaced — e.g. after `stakingCap` /
+`capGuardian` land. **Do not broadcast unless `.env` + keystore/private key are intentionally
+set for your machine.** Prefer keystore (`DEPLOYER_ACCOUNT`) over raw keys.
+
+1. **Prep env** (see `.env.example`):
+   - `WXDC=0x56408DC41E35d3E8E92A16bc94787438df9387a1`
+   - `TIMELOCK`, `GUARDIAN`, `TREASURY`, `KEEPER` (Apothem EOAs; guardian ≠ deployer)
+   - `MAX_PENALTY_BPS`, `PENALTY_SPLIT_BPS`
+   - Optional fresh mock USDC: `make deploy-apothem-mocks` then set `USDC` + `REWARD_TOKENS=$WXDC,$USDC`
+2. **Broadcast core**:
+   ```bash
+   export DEPLOYER_ACCOUNT=deployer
+   make deploy-apothem
+   # or: DEPLOYER_PRIVATE_KEY=0x… make deploy-apothem-pk
+   # resume partial: make deploy-apothem-continue
+   ```
+3. **Confirm escrow wiring**: `escrow.capGuardian() == GUARDIAN`, `escrow.stakingCap() == type(uint256).max` until you call `setStakingCap`.
+4. **Refresh address wiring** (required after every successful broadcast):
+   - Commit / copy `deployments/51.json` from the script output
+   - Update `packages/contracts/src/deployments.ts` (`deployment51`)
+   - Rebuild ABIs if bytecode changed: `pnpm prepare:contracts`
+   - Web: `apps/web/.env.local` (`NEXT_PUBLIC_CHAIN_ID=51`, RPC, indexer URL)
+   - Indexer: `DEPLOYMENT_CHAIN_ID=51`, RPC, `DATABASE_URL`, `KEEPER_PRIVATE_KEY`, optional `FEE_SPLITTER` / `REWARD_TOKENS`
+5. **Optional launch FeeSplitter**: `/integrate` or `make deploy-adapter`, then `/admin` register.
+6. **Verify revenue math**: Admin Simulate revenue or:
+   ```bash
+   export USDC=… FEE_SPLITTER=… AMOUNT=1000000000
+   make simulate-apothem-revenue DEPLOYER_ACCOUNT=deployer
+   ```
+7. Run through [OPERATIONS.md](OPERATIONS.md) for at least two epoch boundaries.
+
+If you cannot broadcast (missing keystore / keys), leave addresses as-is and use the commands
+above when ready — do not invent placeholder live addresses.
 
 Then run through [OPERATIONS.md](OPERATIONS.md) for at least two epoch boundaries: sweep,
 `keepAtMaxLock` in the window, `batchCompound` after it, a claim, an early exit, and a

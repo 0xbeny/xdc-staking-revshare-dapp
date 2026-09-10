@@ -27,6 +27,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
     MockERC20 public immutable USDC;
     address public immutable DAPP;
     address public immutable TIMELOCK;
+    address public immutable CAP_GUARDIAN;
 
     address[3] public actors;
     uint256[] public tokenIds;
@@ -47,6 +48,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         MockERC20 usdc_,
         address dapp_,
         address timelock_,
+        address capGuardian_,
         address[3] memory actors_
     ) {
         ESCROW = escrow_;
@@ -57,6 +59,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         USDC = usdc_;
         DAPP = dapp_;
         TIMELOCK = timelock_;
+        CAP_GUARDIAN = capGuardian_;
         actors = actors_;
     }
 
@@ -81,7 +84,12 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
     function createLock(uint256 actorSeed, uint96 amount, uint8 weeksToLock) external {
         address actor = _actor(actorSeed);
-        uint256 value = bound(amount, 1 ether, 500_000 ether);
+        uint256 headroom = _stakingHeadroom();
+        // Cap can be lowered below one MIN_LOCK; skip rather than revert under fail_on_revert.
+        if (headroom < 1 ether) {
+            return;
+        }
+        uint256 value = bound(amount, 1 ether, headroom < 500_000 ether ? headroom : 500_000 ether);
         uint256 duration = bound(weeksToLock, 1, 104) * WEEK;
 
         WXDC.mint(actor, value);
@@ -103,8 +111,13 @@ contract Handler is CommonBase, StdCheats, StdUtils {
             return;
         }
 
+        uint256 headroom = _stakingHeadroom();
+        if (headroom < 1 ether) {
+            return;
+        }
+
         address owner = ESCROW.ownerOf(tokenId);
-        uint256 value = bound(amount, 1 ether, 100_000 ether);
+        uint256 value = bound(amount, 1 ether, headroom < 100_000 ether ? headroom : 100_000 ether);
         WXDC.mint(owner, value);
 
         vm.startPrank(owner);
@@ -112,6 +125,12 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         ESCROW.increaseAmount(tokenId, value);
         vm.stopPrank();
         ghostDeposited += value;
+    }
+
+    function _stakingHeadroom() internal view returns (uint256) {
+        uint256 locked = ESCROW.totalLocked();
+        uint256 cap = ESCROW.stakingCap();
+        return cap > locked ? cap - locked : 0;
     }
 
     function extendLock(uint256 tokenSeed, uint8 weeksToAdd) external {
@@ -223,6 +242,32 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         ESCROW.setMaxPenaltyBps(bound(cap, 0, ESCROW.maxPenaltyBps()));
         ESCROW.setPenaltySplitBps(bound(split, 0, 5000));
         vm.stopPrank();
+    }
+
+    /// @dev Random legal staking-cap moves: raises always; decreases only above totalLocked.
+    function setStakingCap(bool viaGuardian, uint256 rawCap) external {
+        address admin = viaGuardian ? CAP_GUARDIAN : TIMELOCK;
+        uint256 locked = ESCROW.totalLocked();
+        uint256 current = ESCROW.stakingCap();
+
+        uint256 newCap;
+        if (rawCap % 2 == 0) {
+            // Increase (or no-op): anywhere from current up.
+            uint256 room = type(uint256).max - current;
+            if (room == 0) {
+                return;
+            }
+            newCap = current + bound(rawCap, 0, room > 1e24 ? 1e24 : room);
+        } else {
+            // Decrease: must keep newCap > totalLocked.
+            if (locked >= current - 1 || current <= locked + 1) {
+                return;
+            }
+            newCap = bound(rawCap, locked + 1, current - 1);
+        }
+
+        vm.prank(admin);
+        ESCROW.setStakingCap(newCap);
     }
 
     function warp(uint32 secondsForward) external {

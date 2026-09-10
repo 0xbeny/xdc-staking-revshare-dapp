@@ -16,6 +16,31 @@ adapter may notify. Changing the terms means deploying a new adapter.
 
 Index: [adapters/README.md](adapters/README.md).
 
+## Partner UI flow (Modes A & B)
+
+For approved FeeSplitter (default) or PushAdapter deployments on Apothem / configured chain:
+
+1. **Deploy** — open `/integrate` in the web app, pick Mode B or A, set `committedBps`, treasury
+   (and Push `source`), keep WXDC/USDC reward tokens prefilled from the deployment, and deploy
+   from the partner wallet. Copy the adapter address from the success checklist.
+2. **Whitelist** — send the address out of band to a `REGISTRY_ADMIN`. On `/admin` → Adapters,
+   paste the address; the desk checks contract code, `DISTRIBUTOR` match, and `COMMITTED_BPS`
+   vs the form, then `registerAdapter`. The adapter appears in the **Listed dApps** table.
+3. **Fund / skim (testnet)** — on Apothem, use Admin → **Simulate revenue** (mint mock USDC →
+   `skim`) or CLI:
+
+```bash
+export USDC=0x...            # from deployments/51.json
+export FEE_SPLITTER=0x...    # registered Mode B adapter
+export AMOUNT=1000000000     # optional; default 1000e6
+make simulate-apothem-revenue DEPLOYER_ACCOUNT=deployer
+```
+
+Expected committed = `amount * committedBps / 10000`. After an epoch settles, confirm claims /
+indexer revenue.
+
+B2 / B3 / C stay Foundry + docs only in v1 (no partner UI).
+
 ## Choose a mode (summary)
 
 | Mode | Contract | When to use | Who calls |
@@ -31,6 +56,8 @@ supported token. Never install either on a general treasury Safe.
 
 ## Deploy (all modes)
 
+CLI (any mode, including B2/B3/C):
+
 ```bash
 export DISTRIBUTOR=0x...          # from deployments/<chainId>.json
 export ADAPTER_MODE=B             # A | B | B2 | B3 | C
@@ -44,9 +71,11 @@ export REPORTER=0x...             # C only
 make deploy-adapter NETWORK=xdc DEPLOYER_ACCOUNT=deployer
 ```
 
-The script prints registration calldata for the **timelock** (and Mode C reporter grant /
-B2 approve / B3 `enableModule` as needed). Until registration,
-`notifyRevenue` reverts with `NotAnActiveAdapter`.
+Or Modes A/B from the web: `/integrate` (see above).
+
+The script / UI prints or shows the adapter address. Registration remains a separate
+`REGISTRY_ADMIN` / timelock action. Until registration, `notifyRevenue` reverts with
+`NotAnActiveAdapter`.
 
 ## What lockers see
 

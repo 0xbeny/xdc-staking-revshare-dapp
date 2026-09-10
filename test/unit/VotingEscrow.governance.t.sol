@@ -42,21 +42,23 @@ contract VotingEscrowGovernanceTest is Base {
 
     function test_constructorRejectsOutOfRangeParameters() public {
         vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
-        new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5001, 2000);
+        new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5001, 2000);
 
         vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
-        new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 5001);
+        new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5000, 5001);
     }
 
     function test_constructorRejectsZeroAddresses() public {
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
-        new VotingEscrow(address(0), address(distributor), treasury, timelock, 5000, 2000);
+        new VotingEscrow(address(0), address(distributor), treasury, timelock, guardian, 5000, 2000);
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
-        new VotingEscrow(address(wxdc), address(0), treasury, timelock, 5000, 2000);
+        new VotingEscrow(address(wxdc), address(0), treasury, timelock, guardian, 5000, 2000);
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
-        new VotingEscrow(address(wxdc), address(distributor), address(0), timelock, 5000, 2000);
+        new VotingEscrow(address(wxdc), address(distributor), address(0), timelock, guardian, 5000, 2000);
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
-        new VotingEscrow(address(wxdc), address(distributor), treasury, address(0), 5000, 2000);
+        new VotingEscrow(address(wxdc), address(distributor), treasury, address(0), guardian, 5000, 2000);
+        vm.expectRevert(VotingEscrow.ZeroAddress.selector);
+        new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, address(0), 5000, 2000);
     }
 
     function test_wrapperTierExistsButIsEmptyAtLaunch() public view {

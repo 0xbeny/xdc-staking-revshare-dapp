@@ -13,7 +13,8 @@ contract WithdrawalCooldownTest is Base {
     }
 
     function test_defaultCooldownIs24Hours() public {
-        VotingEscrow fresh = new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 2000);
+        VotingEscrow fresh =
+            new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5000, 2000);
         assertEq(fresh.withdrawalCooldown(), 1 days);
         assertEq(fresh.HARD_MAX_WITHDRAWAL_COOLDOWN(), 7 days);
     }

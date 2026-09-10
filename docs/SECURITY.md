@@ -7,8 +7,8 @@
 | **User** | lock, increase, extend, withdraw at expiry, exit early at the immutable penalty, claim, set recipient / keeper flags / operators | transfer, split, merge, wrap, avoid the penalty |
 | **Operator** (user-approved) | `increaseUnlockTime` on that user's positions | compound / `claimAndLock`, move principal, anything else |
 | **Keeper** (`KEEPER_ROLE`) | extend opted-in locks in the window, compound opted-in rewards (`autoCompound`) | move principal, redirect claims, change parameters |
-| **Guardian** (`PAUSER_ROLE`) | pause the distributor | unpause, touch the escrow, touch parameters |
-| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | **lower** `maxPenaltyBps` / tune `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter | move principal, change penalty destinations, **raise** `maxPenaltyBps`, raise an existing position's cap, bypass the clamps, upgrade the escrow |
+| **Guardian** (`PAUSER_ROLE` on distributor; escrow `capGuardian`) | pause the distributor; raise/lower escrow `stakingCap` (decreases only if `totalLocked < newCap`) | unpause, move principal, change penalty params, upgrade contracts |
+| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | **lower** `maxPenaltyBps` / tune `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter, set/raise/lower `stakingCap`, rotate `capGuardian` | move principal, change penalty destinations, **raise** `maxPenaltyBps`, raise an existing position's cap, bypass the clamps, upgrade the escrow |
 | **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
 | **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
 

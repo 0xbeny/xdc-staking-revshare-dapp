@@ -27,6 +27,8 @@ interface IVotingEscrow {
 
     function maxPenaltyBps() external view returns (uint256);
     function penaltySplitBps() external view returns (uint256);
+    function stakingCap() external view returns (uint256);
+    function capGuardian() external view returns (address);
 
     function ownerOf(uint256 tokenId) external view returns (address);
     function locked(uint256 tokenId) external view returns (Lock memory);

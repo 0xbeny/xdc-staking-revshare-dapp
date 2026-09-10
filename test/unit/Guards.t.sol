@@ -298,7 +298,8 @@ contract GuardsTest is Base {
 
     function test_escrowRejectsFeeOnTransferDeposits() public {
         MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(1000); // 10% fee
-        VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+        VotingEscrow local =
+            new VotingEscrow(address(fot), address(distributor), treasury, timelock, guardian, 5000, 2000);
         local.setDepositor(address(this));
 
         fot.mint(address(this), 10 ether);
@@ -312,7 +313,8 @@ contract GuardsTest is Base {
 
     function test_escrowRejectsFeeOnTransferIncreaseAmount() public {
         MockFeeOnTransferERC20 fot = new MockFeeOnTransferERC20(0);
-        VotingEscrow local = new VotingEscrow(address(fot), address(distributor), treasury, timelock, 5000, 2000);
+        VotingEscrow local =
+            new VotingEscrow(address(fot), address(distributor), treasury, timelock, guardian, 5000, 2000);
         local.setDepositor(address(this));
 
         fot.mint(address(this), 20 ether);
@@ -339,7 +341,8 @@ contract GuardsTest is Base {
     }
 
     function test_setDepositorRejectsUnauthorizedCaller() public {
-        VotingEscrow local = new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 2000);
+        VotingEscrow local =
+            new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5000, 2000);
         assertEq(local.bootstrapAdmin(), address(this));
 
         vm.prank(alice);

@@ -14,9 +14,10 @@ contract SystemInvariantsTest is Base {
         super.setUp();
         vm.warp(_epochStart(_currentEpoch() + 1));
 
-        handler = new Handler(escrow, zap, distributor, pusher, wxdc, usdc, dapp, timelock, [alice, bob, carol]);
+        handler =
+            new Handler(escrow, zap, distributor, pusher, wxdc, usdc, dapp, timelock, guardian, [alice, bob, carol]);
 
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](13);
         selectors[0] = Handler.createLock.selector;
         selectors[1] = Handler.increaseAmount.selector;
         selectors[2] = Handler.extendLock.selector;
@@ -28,6 +29,8 @@ contract SystemInvariantsTest is Base {
         selectors[8] = Handler.syncForfeiture.selector;
         selectors[9] = Handler.checkpoint.selector;
         selectors[10] = Handler.warp.selector;
+        selectors[11] = Handler.setPenaltyParams.selector;
+        selectors[12] = Handler.setStakingCap.selector;
 
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
@@ -36,6 +39,11 @@ contract SystemInvariantsTest is Base {
     /// @dev Principal safety: every unit of principal the escrow still owes is still held by it.
     function invariant_escrowHoldsExactlyItsOutstandingPrincipal() public view {
         assertEq(wxdc.balanceOf(address(escrow)), escrow.totalLocked());
+    }
+
+    /// @dev Global staking cap is a hard ceiling on live principal.
+    function invariant_totalLockedNeverExceedsStakingCap() public view {
+        assertLe(escrow.totalLocked(), escrow.stakingCap());
     }
 
     /// @dev Principal in == principal out + principal still locked.

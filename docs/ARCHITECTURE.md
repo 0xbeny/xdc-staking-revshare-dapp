@@ -340,6 +340,7 @@ observable. Mitigations:
 |---|---|
 | Claim epochs per token | `MAX_EPOCHS_PER_CLAIM = 52` |
 | Reward token set | small fixed list at deploy |
+| Global staking TVL | `stakingCap` (default uncapped; timelock/`capGuardian`) |
 | Keeper batch | `KEEPER_BATCH_SIZE` (default 50) chunked off-chain |
 | Indexer sync tip | `latest - SYNC_CONFIRMATIONS` (default 12) |
 | UI position list | pages of 25 |

@@ -108,7 +108,7 @@ library VeXDCDeployer {
         d.access.grantRole(address(d.distributor), Roles.DEFAULT_ADMIN, admin);
 
         d.escrow = new VotingEscrow(
-            c.wxdc, address(d.distributor), c.treasury, c.timelock, c.maxPenaltyBps, c.penaltySplitBps
+            c.wxdc, address(d.distributor), c.treasury, c.timelock, c.guardian, c.maxPenaltyBps, c.penaltySplitBps
         );
 
         d.registry.setDistributor(address(d.distributor));
@@ -170,6 +170,9 @@ library VeXDCDeployer {
         }
         if (d.escrow.timelock() != c.timelock) {
             return "escrow.timelock mismatch";
+        }
+        if (d.escrow.capGuardian() != c.guardian) {
+            return "escrow.capGuardian mismatch";
         }
         if (d.escrow.token() != c.wxdc) {
             return "escrow.token mismatch";

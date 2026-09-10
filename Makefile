@@ -12,7 +12,7 @@ SLITHER ?= $(if $(wildcard .venv/bin/slither),.venv/bin/slither,slither)
 .PHONY: ci fmt-check lint-ci lint-tests sizes slither slither-install \
         build test test-unit test-e2e test-fuzz test-invariant test-invariant-strict coverage lint fmt \
         anvil deploy-local deploy-apothem-mocks deploy-apothem deploy-apothem-pk deploy-apothem-continue \
-        deploy-mainnet deploy-adapter clean
+        deploy-mainnet deploy-adapter simulate-apothem-revenue clean
 
 ## The full local gate — the same steps the GitHub Actions PR/push workflow runs.
 ci: fmt-check lint-ci lint-tests sizes test test-invariant-strict coverage slither
@@ -126,6 +126,11 @@ deploy-mainnet:
 deploy-adapter:
 	forge script script/DeployAdapter.s.sol:DeployAdapter --rpc-url $(NETWORK) --account $(DEPLOYER_ACCOUNT) \
 		--broadcast --verify
+
+## Apothem: mint mock USDC to a FeeSplitter and skim (USDC + FEE_SPLITTER in env; optional AMOUNT).
+simulate-apothem-revenue:
+	forge script script/ApothemMockRevenue.s.sol:ApothemMockRevenue --rpc-url xdc_apothem \
+		--account $(DEPLOYER_ACCOUNT) --broadcast --slow
 
 clean:
 	forge clean

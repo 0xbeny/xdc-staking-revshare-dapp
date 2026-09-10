@@ -8,7 +8,8 @@ import {Base} from "../Base.t.sol";
 /// @dev Adversarial checks at Foundry broadcast boundaries that unit wiring cannot insert.
 contract DeployBoundaryTest is Base {
     function test_attackerCannotCaptureDepositorBetweenEscrowAndZap() public {
-        VotingEscrow fresh = new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 2000);
+        VotingEscrow fresh =
+            new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5000, 2000);
         assertEq(fresh.bootstrapAdmin(), address(this));
 
         address attacker = makeAddr("attacker");

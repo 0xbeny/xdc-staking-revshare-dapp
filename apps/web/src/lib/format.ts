@@ -31,6 +31,7 @@ export function formatDate(tsSeconds: number | bigint): string {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   }).format(new Date(ms));
 }
 

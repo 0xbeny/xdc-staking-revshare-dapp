@@ -49,6 +49,7 @@ contract ContinueApothemDeploy is Script {
             address(distributor),
             config.treasury,
             config.timelock,
+            config.guardian,
             config.maxPenaltyBps,
             config.penaltySplitBps
         );

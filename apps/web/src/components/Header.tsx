@@ -9,6 +9,7 @@ import styles from "./Header.module.css";
 
 const links = [
   { href: "/dashboard", label: "Dashboard", match: (p: string) => p.startsWith("/dashboard") || p.startsWith("/position") },
+  { href: "/integrate", label: "Integrate", match: (p: string) => p.startsWith("/integrate") },
   { href: "/system", label: "System", match: (p: string) => p.startsWith("/system") },
   { href: "/admin", label: "Admin", match: (p: string) => p.startsWith("/admin") },
 ] as const;
