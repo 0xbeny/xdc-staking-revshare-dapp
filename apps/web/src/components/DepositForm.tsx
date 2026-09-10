@@ -20,8 +20,9 @@ import {
   unlockAtWeeks,
   weeksToDuration,
 } from "@/lib/contracts";
-import { formatDate, formatXdc, parseXdcInput, txErrorMessage } from "@/lib/format";
+import { formatDate, formatUsd, formatXdc, parseXdcInput, txErrorMessage } from "@/lib/format";
 import { useCorrectChain } from "@/lib/useCorrectChain";
+import { useXdcUsdPrice } from "@/lib/useXdcUsdPrice";
 import { XdcLogo } from "./XdcLogo";
 import styles from "./DepositForm.module.css";
 
@@ -191,6 +192,11 @@ export function DepositForm() {
   }, [isSuccess]);
 
   const value = useMemo(() => parseXdcInput(amount), [amount]);
+  const xdcUsd = useXdcUsdPrice();
+  const amountUsd = useMemo(() => {
+    if (xdcUsd == null || value == null || value === 0n) return null;
+    return Number(formatUnits(value, 18)) * xdcUsd;
+  }, [value, xdcUsd]);
   const duration = weeksToDuration(weeks);
   const weightPct = Math.round((weeks / MAX_LOCK_WEEKS) * 100);
 
@@ -296,6 +302,18 @@ export function DepositForm() {
               setAmount(e.target.value);
             }}
           />
+        </div>
+        <div className={styles.usdRow} aria-live="polite">
+          {amountUsd != null ? (
+            <span className={styles.usdWorth}>≈ {formatUsd(amountUsd)}</span>
+          ) : (
+            <span className={styles.usdWorthMuted}>≈ $—</span>
+          )}
+          {xdcUsd != null ? (
+            <span className={styles.usdSpot} title="Spot from CoinGecko">
+              1 XDC ≈ {formatUsd(xdcUsd, 4)}
+            </span>
+          ) : null}
         </div>
         <div className={styles.pctRow}>
           <input

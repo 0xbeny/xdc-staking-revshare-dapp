@@ -14,6 +14,18 @@ export function formatXdc(value: bigint, digits = 2): string {
   }).format(n);
 }
 
+export function formatUsd(value: number, digits = 2): string {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  const maxDigits = abs > 0 && abs < 0.01 ? 4 : digits;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: maxDigits,
+    minimumFractionDigits: maxDigits === 4 ? 2 : Math.min(digits, 2),
+  }).format(value);
+}
+
 export function formatTokenAmount(value: bigint, decimals = 18, digits = 4): string {
   const n = Number(formatUnits(value, decimals));
   if (!Number.isFinite(n)) return "0";
