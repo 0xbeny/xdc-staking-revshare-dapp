@@ -90,6 +90,17 @@ export function weeksToDuration(weeks: number): bigint {
   return BigInt(clamped) * BigInt(WEEK_SECONDS);
 }
 
+/** Matches `EpochTime.ceilWeek` — unlocks always land on Thursday 00:00 UTC. */
+export function ceilWeek(timestampSec: number): number {
+  return Math.floor((timestampSec + WEEK_SECONDS - 1) / WEEK_SECONDS) * WEEK_SECONDS;
+}
+
+/** Unlock timestamp the escrow will store for a `duration = weeks` lock started now. */
+export function unlockAtWeeks(weeks: number, nowSec = Math.floor(Date.now() / 1000)): number {
+  const duration = Number(weeksToDuration(weeks));
+  return ceilWeek(nowSec + duration);
+}
+
 export function explorerAddressUrl(chainId: number, address: string): string {
   const base =
     chainId === 50

@@ -1,32 +1,32 @@
-import { ConnectButton } from "@/components/ConnectButton";
+"use client";
+
+import { useEffect, useRef } from "react";
 import { DepositForm } from "@/components/DepositForm";
+import { gsap, prefersReducedMotion } from "@/lib/gsap";
 import styles from "./page.module.css";
 
 export default function HomePage() {
-  return (
-    <>
-      <section className={styles.hero} aria-labelledby="brand-title">
-        <div className={styles.heroGlow} aria-hidden />
-        <div className={`shell ${styles.heroInner}`}>
-          <h1 id="brand-title" className={styles.brand}>
-            veXDC
-            <span className={styles.filament} aria-hidden />
-          </h1>
-          <p className={styles.tagline}>Lock XDC. Earn protocol revenue.</p>
-          <div className={styles.ctas}>
-            <ConnectButton />
-            <a className={styles.lockCta} href="#deposit">
-              Lock XDC →
-            </a>
-          </div>
-        </div>
-      </section>
+  const heroRef = useRef<HTMLElement>(null);
 
-      <section className={styles.depositSection}>
-        <div className={`shell ${styles.depositWrap}`}>
-          <DepositForm />
-        </div>
-      </section>
-    </>
+  useEffect(() => {
+    const root = heroRef.current;
+    if (!root || prefersReducedMotion()) return;
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        `.${styles.widget}`,
+        { opacity: 0, y: 16 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
+      );
+    }, root);
+    return () => ctx.revert();
+  }, []);
+
+  return (
+    <section className={styles.hero} aria-label="Stake XDC" ref={heroRef}>
+      <div className={styles.heroGlow} aria-hidden />
+      <div className={styles.widget}>
+        <DepositForm />
+      </div>
+    </section>
   );
 }

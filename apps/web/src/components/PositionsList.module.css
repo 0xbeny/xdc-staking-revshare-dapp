@@ -76,12 +76,12 @@
 
 .manageBtn {
   border: 1px solid var(--border-strong);
-  background: rgba(26, 155, 142, 0.12);
+  background: var(--accent-fill);
   color: var(--teal-100);
 }
 
 .manageBtn:hover {
-  background: rgba(26, 155, 142, 0.22);
+  background: var(--accent-fill-strong);
 }
 
 .manageBtn:active {
@@ -125,7 +125,7 @@
   border: 1px dashed var(--border);
   border-radius: var(--radius);
   color: var(--ink-muted);
-  background: rgba(6, 20, 22, 0.45);
+  background: rgba(10, 12, 16, 0.55);
 }
 
 .link {
@@ -133,5 +133,5 @@
 }
 
 .link:hover {
-  color: var(--ember-400);
+  color: var(--teal-100);
 }

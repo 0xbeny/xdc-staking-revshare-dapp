@@ -2,11 +2,13 @@
 
 Visual and UX specification for `apps/web`. Implementation must follow this document.
 
+Brand alignment: tokens and mood track **[xdcai.tech](https://xdcai.tech)** (dark near-black surfaces, cyan accent `#2dd4bf`, cool slate ink). veXDC remains a staking desk — not a purple AI SaaS template.
+
 ---
 
 ## 1. Product intent
 
-**veXDC** is vote-escrowed XDC: lock native XDC for protocol revenue share. The UI should feel like a **sovereign treasury desk** — calm, precise, on-chain — not a generic DeFi dashboard or purple SaaS template.
+**veXDC** is vote-escrowed XDC: lock native XDC for protocol revenue share. The UI should feel like a **sovereign treasury desk** — calm, precise, on-chain — sharing XDC AI’s cool cyan-on-near-black atmosphere.
 
 Primary jobs:
 
@@ -28,67 +30,80 @@ One composition, full-bleed atmosphere:
 
 | Element | Role |
 |---------|------|
-| **veXDC** | Display wordmark (Syne), dominant |
+| **veXDC** | Display wordmark (Space Grotesk), dominant |
 | One line | “Lock XDC. Earn protocol revenue.” |
 | CTA group | Connect wallet + scroll/focus deposit |
-| Dominant visual | Full-bleed teal depth field with ember filament (not an inset card image) |
+| Dominant visual | Full-bleed near-black field with cyan depth wash (not an inset card image) |
 
 **Do not** put stats, TVL chips, schedule rows, or promo badges in the first viewport.
 
 ### Wordmark treatment
 
-- Font: Syne ExtraBold / Bold
+- Font: Space Grotesk Bold (700)
 - Tracking: slightly tight (`-0.03em`)
-- Color: `--ink-bright` with a soft ember underline filament (1–2px gradient stroke under the “ve”)
+- Color: `--ink-bright` with a soft cyan underline filament (1–2px gradient stroke under the “ve”)
 - Optional micro-motion: wordmark fades up 12px on load (220ms ease-out); filament draws left→right once
 
 ---
 
-## 3. Color system (XDC teal × ember)
+## 3. Color system (xdcai.tech dark × cyan)
 
-Dark-first. No purple gradients. No cream paper look. No neon glow stacks.
+Extracted from xdcai.tech dark theme:
+
+| Token (site) | Value | Role |
+|--------------|-------|------|
+| `--c-bg` | `#08090c` | Page ground |
+| `--c-surface` | `#0f1117` | Raised panels |
+| `--c-surface-2` | `#151823` | Nested / inset lift |
+| `--c-border` | `#1f2330` | Hairlines |
+| `--c-muted` | `#8b93a7` | Secondary copy |
+| `--c-text` | `#e7eaf1` | Body ink |
+| `--c-accent` | `#2dd4bf` | Primary accent (cyan) |
+| `--c-accent-soft` | `#134e4a` | Soft accent wash |
+
+Supporting signals from the same CSS: blue `#3884ff` (charts / links contrast), amber `#eab24a` (warn / coming-soon). Dark-first. No purple gradients. No cream paper look. No neon glow stacks.
 
 ```css
 :root {
-  /* Surfaces */
-  --bg-deep: #041012;
-  --bg-base: #07181b;
-  --bg-raised: #0c2428;
-  --bg-inset: #061416;
-  --bg-overlay: rgba(4, 16, 18, 0.72);
+  /* Surfaces (xdcai near-black) */
+  --bg-deep: #06070a;
+  --bg-base: #08090c;
+  --bg-raised: #0f1117;
+  --bg-inset: #0a0c10;
+  --bg-overlay: rgba(8, 9, 12, 0.78);
 
-  /* Teal spine (XDC-adjacent) */
-  --teal-900: #0a3d42;
-  --teal-700: #0f6b72;
-  --teal-500: #1a9b8e;
-  --teal-300: #3ecfbf;
-  --teal-100: #b8f0e8;
+  /* Cyan spine (xdcai --c-accent) */
+  --teal-900: #0a2f2c;
+  --teal-700: #134e4a;
+  --teal-500: #14b8a6;
+  --teal-300: #2dd4bf;
+  --teal-100: #99f6e4;
 
-  /* Ember accents (action / heat) */
-  --ember-700: #b33a08;
-  --ember-500: #e85d04;
-  --ember-400: #f48c06;
-  --ember-200: #ffba6a;
+  /* Amber signal (warn / focus secondary — not primary CTA) */
+  --ember-700: #a16207;
+  --ember-500: #eab24a;
+  --ember-400: #f59e0b;
+  --ember-200: #fcd34d;
 
   /* Ink */
-  --ink-bright: #eef7f6;
-  --ink-primary: #c5d9d6;
-  --ink-muted: #7a9a96;
-  --ink-faint: #4a6865;
+  --ink-bright: #f4f7fc;
+  --ink-primary: #e7eaf1;
+  --ink-muted: #8b93a7;
+  --ink-faint: #55617d;
 
   /* Semantic */
-  --ok: #2db88a;
-  --warn: #e8b84a;
-  --danger: #e04b4b;
-  --border: rgba(62, 207, 191, 0.14);
-  --border-strong: rgba(62, 207, 191, 0.32);
-  --focus-ring: rgba(244, 140, 6, 0.55);
+  --ok: #2dd4bf;
+  --warn: #eab24a;
+  --danger: #fb2c36;
+  --border: #1f2330;
+  --border-strong: rgba(45, 212, 191, 0.35);
+  --focus-ring: rgba(45, 212, 191, 0.55);
 
   /* Charts */
   --chart-tvl: var(--teal-300);
-  --chart-revenue: var(--ember-400);
+  --chart-revenue: #3884ff;
   --chart-earnings: var(--teal-500);
-  --chart-grid: rgba(122, 154, 150, 0.18);
+  --chart-grid: rgba(139, 147, 167, 0.18);
 }
 ```
 
@@ -96,24 +111,26 @@ Dark-first. No purple gradients. No cream paper look. No neon glow stacks.
 
 Background is never flat `#000`. Use:
 
-1. Radial teal wash from upper-left (`--teal-900` → transparent).
-2. Soft ember glow anchored lower-right (very low opacity, ~6–10%).
+1. Radial cyan wash from upper-left (`--teal-700` / accent soft → transparent).
+2. Soft cool blue depth lower-right (very low opacity, ~5–8% of `#3884ff` or surface lift) — not warm orange glow.
 3. Fine diagonal hatch or noise at 3–5% opacity for texture (CSS or SVG pattern).
 
 ---
 
 ## 4. Typography
 
+xdcai.tech ships **Inter** + **JetBrains Mono**. We keep JetBrains Mono; body/display avoid Inter (and Roboto/Arial/system) per product rules — use a geometric tech pair that matches the same cool, product-engineering mood.
+
 | Role | Font | Weight | Size (desktop) | Notes |
 |------|------|--------|----------------|-------|
-| Display / brand | **Syne** | 700–800 | clamp(3rem, 8vw, 5.5rem) | Wordmark only / section titles |
-| Headings | **Syne** | 600–700 | 1.5–2rem | Section heads |
-| Body / UI | **IBM Plex Sans** | 400–500 | 0.9375–1rem | Forms, tables, copy |
-| Mono / amounts | **IBM Plex Mono** | 400–500 | 0.875–1rem | Balances, token IDs, addresses |
+| Display / brand | **Space Grotesk** | 700 | clamp(3rem, 8vw, 5.5rem) | Wordmark / section titles |
+| Headings | **Space Grotesk** | 600–700 | 1.5–2rem | Section heads |
+| Body / UI | **Space Grotesk** | 400–500 | 0.9375–1rem | Forms, tables, copy |
+| Mono / amounts | **JetBrains Mono** | 400–500 | 0.875–1rem | Balances, token IDs, addresses |
 
 Line-height: body 1.5; display 1.05. Avoid Inter, Roboto, Arial, system-ui as primary.
 
-Load via `next/font/google`: Syne, IBM_Plex_Sans, IBM_Plex_Mono.
+Load via `next/font/google`: Space_Grotesk, JetBrains_Mono.
 
 ---
 
@@ -142,38 +159,39 @@ Default: **no decorative cards**. Surfaces that hold forms, lists, or charts may
 
 - Background: `--bg-raised`
 - Border: `1px solid var(--border)`
-- Radius: `12px` (not pill-full)
+- Radius: `12px` (not pill-full) — aligns with xdcai `rounded-xl`
 - Shadow: none or a single soft `0 12px 40px rgba(0,0,0,0.35)` — never multi-layer glow
 
 ### Buttons
 
 | Variant | Use | Look |
 |---------|-----|------|
-| **Primary** | Deposit, Claim, Confirm exit | Ember fill `--ember-500`, text `--bg-deep`, hover `--ember-400` |
-| **Secondary** | Extend, Increase, Cancel | Teal outline / translucent teal fill |
+| **Primary** | Deposit, Claim, Confirm exit, Connect | Cyan fill `--teal-300`, text `--bg-deep` (or white), hover `--teal-100`; optional soft accent shadow |
+| **Secondary** | Extend, Increase, Cancel | Cyan outline / translucent cyan fill |
 | **Ghost** | Nav / tertiary | Text + underline on hover |
 | **Danger** | Emergency exit | `--danger` outline |
+| **Warn outline** | Wrong network | Amber `--ember-500` outline |
 
 Min hit target 44×44px. Disabled: 40% opacity, `cursor: not-allowed`.
 
 ### Inputs & slider
 
-- Amount field: large IBM Plex Mono, inset `--bg-inset`, teal focus border
-- Duration slider: track `--teal-900`, fill `--teal-500`, thumb ember circle
+- Amount field: large JetBrains Mono, inset `--bg-inset`, cyan focus border
+- Duration slider: track `--teal-900`, fill `--teal-500`, thumb cyan circle
 - Labels always visible (not placeholder-only)
 
 ### Banner (contracts missing)
 
 Full-width strip under header:
 
-- Background: `rgba(232, 93, 4, 0.12)`
+- Background: `rgba(234, 178, 74, 0.12)`
 - Border-bottom: `--ember-500`
 - Copy: **Contracts not deployed on this network**
 - Subcopy: shell remains usable; writes disabled
 
 ### Connect button
 
-Shows truncated address when connected; chain badge (`Apothem` / `XDC`). Wrong network → ember outline “Switch network”.
+Shows truncated address when connected; chain badge (`Apothem` / `XDC`). Wrong network → amber outline “Switch network”.
 
 ---
 
@@ -189,7 +207,7 @@ Shows truncated address when connected; chain badge (`Apothem` / `XDC`). Wrong n
 │   Lock XDC. Earn protocol revenue.                    │
 │   [Connect]  [Lock XDC →]                             │
 │                                                       │
-│ ── full-bleed teal/ember field continues behind ──    │
+│ ── full-bleed cyan/near-black field continues ──      │
 │                                                       │
 │   ┌─ Deposit panel ─────────────────────────────┐     │
 │   │ Amount (XDC)     Duration 1–104 weeks       │     │
@@ -239,8 +257,8 @@ Show cooldown `readyAt` clearly. Block increase/extend when exit pending.
 
 - Dark tooltip: `--bg-raised`, border `--border`
 - Grid: `--chart-grid`, no vertical lines preferred
-- Axes: `--ink-muted`, IBM Plex Sans 12px
-- TVL: area teal; Revenue: bar or line ember; Earnings: area teal-500
+- Axes: `--ink-muted`, Space Grotesk 12px
+- TVL: area cyan; Revenue: bar/line blue `#3884ff`; Earnings: area teal-500
 - Empty: centered muted copy “No indexed data yet”
 - Legend text, not color alone
 
@@ -250,7 +268,7 @@ Show cooldown `readyAt` clearly. Block increase/extend when exit pending.
 
 Ship **2–3** purposeful motions:
 
-1. **Hero brand** — fade/slide-up + ember filament draw (once)
+1. **Hero brand** — fade/slide-up + cyan filament draw (once)
 2. **Primary button** — press scale `0.98` (120ms)
 3. **Panel enter** — deposit / manage opacity 0→1 + 8px rise (180ms)
 
@@ -299,8 +317,18 @@ No continuous glow pulses, no parallax noise, no emoji animations.
 | Landing | `src/app/page.tsx` + `DepositForm` |
 | Dashboard | `src/app/dashboard/page.tsx` |
 | Manage | `ManagePosition` + `/position/[tokenId]` |
+| System | `/system` + `SystemStatus` (roles, addresses, health) |
+| Admin | `/admin` + `AdminActions` (role-gated writes) |
+| Motion | GSAP via `lib/gsap.ts` + `Reveal` (respects reduced-motion) |
 | Wallet | `ConnectButton`, `providers.tsx`, `lib/wagmi.ts` |
 | Chain/contracts | `lib/contracts.ts` + banner |
 | Indexer charts | `lib/indexer.ts` + chart components |
 
 CSS modules per component + global variables. No Tailwind required.
+
+### System / Admin (data-dense)
+
+- Dense 12-col grid, compact tables, KPI strip, role matrix cards
+- Status pills for pause / authorization (not color alone — include text)
+- Admin cards disabled + labeled when wallet lacks role
+- No decorative cards; interaction panels only

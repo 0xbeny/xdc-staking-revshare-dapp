@@ -21,16 +21,16 @@
 }
 
 .claim {
-  background: var(--ember-500);
+  background: var(--teal-300);
   color: var(--bg-deep);
 }
 
 .claim:hover:not(:disabled) {
-  background: var(--ember-400);
+  background: var(--teal-100);
 }
 
 .lock {
-  background: rgba(26, 155, 142, 0.16);
+  background: var(--accent-fill);
   border-color: var(--border-strong);
   color: var(--teal-100);
 }

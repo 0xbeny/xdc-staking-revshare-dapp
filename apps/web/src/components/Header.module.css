@@ -2,6 +2,7 @@
   position: sticky;
   top: 0;
   z-index: 40;
+  height: var(--header-h);
   backdrop-filter: blur(12px);
   background: var(--bg-overlay);
   border-bottom: 1px solid var(--border);
@@ -12,7 +13,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.85rem 0;
+  height: 100%;
+  padding: 0;
 }
 
 .brand {
@@ -30,22 +32,35 @@
 .nav {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.35rem 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .link {
   color: var(--ink-muted);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
+  padding: 0.35rem 0.15rem;
+  border-bottom: 2px solid transparent;
+  transition: color 150ms ease, border-color 150ms ease;
 }
 
-.link:hover,
-.linkActive {
+.link:hover {
   color: var(--ink-bright);
 }
 
-@media (max-width: 640px) {
-  .linkLabel {
-    display: none;
+.linkActive {
+  color: var(--ink-bright);
+  border-bottom-color: var(--teal-300);
+}
+
+@media (max-width: 720px) {
+  .nav {
+    gap: 0.25rem 0.75rem;
+  }
+
+  .link {
+    font-size: 0.8rem;
   }
 }

@@ -1,0 +1,42 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.5rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.ok {
+  color: #99f6e4;
+  background: rgba(45, 212, 191, 0.14);
+  border-color: rgba(45, 212, 191, 0.35);
+}
+
+.warn {
+  color: #fcd34d;
+  background: rgba(234, 178, 74, 0.14);
+  border-color: rgba(234, 178, 74, 0.35);
+}
+
+.danger {
+  color: #ffb0b0;
+  background: rgba(251, 44, 54, 0.16);
+  border-color: rgba(251, 44, 54, 0.4);
+}
+
+.muted {
+  color: var(--ink-muted);
+  background: rgba(139, 147, 167, 0.12);
+  border-color: var(--border);
+}
+
+.info {
+  color: var(--teal-100);
+  background: var(--accent-fill);
+  border-color: var(--border-strong);
+}

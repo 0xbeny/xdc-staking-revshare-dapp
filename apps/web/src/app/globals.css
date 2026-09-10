@@ -1,45 +1,49 @@
-/* Design tokens — see apps/web/design.md */
+/* Design tokens — see apps/web/design.md (aligned with xdcai.tech) */
 
 :root {
-  --bg-deep: #041012;
-  --bg-base: #07181b;
-  --bg-raised: #0c2428;
-  --bg-inset: #061416;
-  --bg-overlay: rgba(4, 16, 18, 0.72);
+  --bg-deep: #06070a;
+  --bg-base: #08090c;
+  --bg-raised: #0f1117;
+  --bg-inset: #0a0c10;
+  --bg-overlay: rgba(8, 9, 12, 0.78);
 
-  --teal-900: #0a3d42;
-  --teal-700: #0f6b72;
-  --teal-500: #1a9b8e;
-  --teal-300: #3ecfbf;
-  --teal-100: #b8f0e8;
+  --teal-900: #0a2f2c;
+  --teal-700: #134e4a;
+  --teal-500: #14b8a6;
+  --teal-300: #2dd4bf;
+  --teal-100: #99f6e4;
 
-  --ember-700: #b33a08;
-  --ember-500: #e85d04;
-  --ember-400: #f48c06;
-  --ember-200: #ffba6a;
+  --ember-700: #a16207;
+  --ember-500: #eab24a;
+  --ember-400: #f59e0b;
+  --ember-200: #fcd34d;
 
-  --ink-bright: #eef7f6;
-  --ink-primary: #c5d9d6;
-  --ink-muted: #7a9a96;
-  --ink-faint: #4a6865;
+  --ink-bright: #f4f7fc;
+  --ink-primary: #e7eaf1;
+  --ink-muted: #8b93a7;
+  --ink-faint: #55617d;
 
-  --ok: #2db88a;
-  --warn: #e8b84a;
-  --danger: #e04b4b;
-  --border: rgba(62, 207, 191, 0.14);
-  --border-strong: rgba(62, 207, 191, 0.32);
-  --focus-ring: rgba(244, 140, 6, 0.55);
+  --ok: #2dd4bf;
+  --warn: #eab24a;
+  --danger: #fb2c36;
+  --border: #1f2330;
+  --border-strong: rgba(45, 212, 191, 0.35);
+  --focus-ring: rgba(45, 212, 191, 0.55);
 
   --chart-tvl: var(--teal-300);
-  --chart-revenue: var(--ember-400);
+  --chart-revenue: #3884ff;
   --chart-earnings: var(--teal-500);
-  --chart-grid: rgba(122, 154, 150, 0.18);
+  --chart-grid: rgba(139, 147, 167, 0.18);
+
+  --accent-fill: rgba(45, 212, 191, 0.12);
+  --accent-fill-strong: rgba(45, 212, 191, 0.22);
 
   --shell-max: 1120px;
+  --header-h: 60px;
   --radius: 12px;
-  --font-display: var(--font-syne), "Syne", sans-serif;
-  --font-body: var(--font-ibm-plex), "IBM Plex Sans", sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), "IBM Plex Mono", monospace;
+  --font-display: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  --font-body: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "JetBrains Mono", monospace;
 }
 
 *,
@@ -66,14 +70,14 @@ body {
   color: var(--ink-primary);
   background-color: var(--bg-base);
   background-image:
-    radial-gradient(ellipse 90% 70% at 8% -10%, rgba(15, 107, 114, 0.45), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 100%, rgba(232, 93, 4, 0.1), transparent 50%),
+    radial-gradient(ellipse 90% 70% at 8% -10%, rgba(19, 78, 74, 0.55), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, rgba(56, 132, 255, 0.07), transparent 50%),
     repeating-linear-gradient(
       -32deg,
       transparent,
       transparent 11px,
-      rgba(62, 207, 191, 0.025) 11px,
-      rgba(62, 207, 191, 0.025) 12px
+      rgba(45, 212, 191, 0.02) 11px,
+      rgba(45, 212, 191, 0.02) 12px
     );
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
@@ -85,7 +89,7 @@ a {
 }
 
 a:hover {
-  color: var(--ember-400);
+  color: var(--teal-100);
 }
 
 button,
@@ -102,6 +106,10 @@ select {
 .shell {
   width: min(100% - 2.5rem, var(--shell-max));
   margin-inline: auto;
+}
+
+main {
+  min-height: calc(100dvh - var(--header-h));
 }
 
 @media (max-width: 640px) {

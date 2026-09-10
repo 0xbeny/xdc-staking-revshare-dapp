@@ -22,22 +22,23 @@
 }
 
 .primary {
-  background: var(--ember-500);
+  background: var(--teal-300);
   color: var(--bg-deep);
+  box-shadow: 0 8px 24px rgba(45, 212, 191, 0.22);
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--ember-400);
+  background: var(--teal-100);
 }
 
 .secondary {
-  background: rgba(26, 155, 142, 0.12);
+  background: var(--accent-fill);
   border-color: var(--border-strong);
   color: var(--teal-100);
 }
 
 .secondary:hover:not(:disabled) {
-  background: rgba(26, 155, 142, 0.22);
+  background: var(--accent-fill-strong);
 }
 
 .warn {

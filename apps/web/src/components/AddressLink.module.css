@@ -1,0 +1,23 @@
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--teal-300);
+  font-size: 0.875rem;
+  word-break: break-all;
+}
+
+.link:hover {
+  color: var(--teal-100);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: -0.02em;
+}
+
+.ext {
+  opacity: 0.55;
+  font-size: 0.75rem;
+}

@@ -82,7 +82,7 @@
 
 .slider {
   width: 100%;
-  accent-color: var(--ember-500);
+  accent-color: var(--teal-300);
 }
 
 .primary,
@@ -116,32 +116,32 @@
 }
 
 .primary {
-  background: var(--ember-500);
+  background: var(--teal-300);
   color: var(--bg-deep);
 }
 
 .primary:hover:not(:disabled) {
-  background: var(--ember-400);
+  background: var(--teal-100);
 }
 
 .secondary {
-  background: rgba(26, 155, 142, 0.14);
+  background: var(--accent-fill);
   border-color: var(--border-strong);
   color: var(--teal-100);
 }
 
 .secondary:hover:not(:disabled) {
-  background: rgba(26, 155, 142, 0.24);
+  background: var(--accent-fill-strong);
 }
 
 .danger {
   background: transparent;
   border-color: var(--danger);
-  color: #ffb4b4;
+  color: #ffb0b0;
 }
 
 .danger:hover:not(:disabled) {
-  background: rgba(224, 75, 75, 0.12);
+  background: rgba(251, 44, 54, 0.12);
 }
 
 .exitPending {
