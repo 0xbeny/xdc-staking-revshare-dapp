@@ -84,10 +84,11 @@ pnpm --filter @vexdc/indexer test
 pnpm --filter @vexdc/indexer typecheck
 ```
 
-Crons live in `apps/indexer/vercel.json`:
+Crons:
 
-- sync every 5 minutes (`*/5 * * * *`), tip lagged by `SYNC_CONFIRMATIONS` (default 12)
-- keeper Wednesday 22:00 UTC (`0 22 * * 3`) for the pre-boundary keep window
-- keeper Thursday 00:05 UTC (`5 0 * * 4`) for post-boundary compound / skim
+- **Sync (near-live):** GitHub Action [indexer-sync.yml](../.github/workflows/indexer-sync.yml) every 5 minutes (`*/5 * * * *`) plus a once-a-day Vercel cron (`0 0 * * *`) as a Hobby-plan fallback. Tip lagged by `SYNC_CONFIRMATIONS` (default 12).
+- **Keeper:** Vercel, Wednesday 22:00 UTC (`0 22 * * 3`) for the pre-boundary keep window, Thursday 00:05 UTC (`5 0 * * 4`) for post-boundary compound / skim.
+
+Set GitHub Actions secret `CRON_SECRET` to the same value as `vexdc-indexer` on Vercel.
 
 Keeper batches are chunked (`KEEPER_BATCH_SIZE`, default 50). Failed required actions return HTTP 503.

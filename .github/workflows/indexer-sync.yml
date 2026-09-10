@@ -1,0 +1,29 @@
+# Pulls veXDC logs into the indexer. Vercel Hobby cannot run */5 crons,
+# so GitHub Actions hits the same /api/sync route every 5 minutes.
+name: Indexer sync
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Sync Apothem logs
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: GET /api/sync
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          INDEXER_URL: https://api.ve.xdcai.tech
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET:-}" ]; then
+            echo "Missing GitHub Actions secret CRON_SECRET (same value as vexdc-indexer CRON_SECRET)."
+            exit 1
+          fi
+          curl -fsS -X GET \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
+            "${INDEXER_URL}/api/sync"

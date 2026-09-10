@@ -43,7 +43,7 @@ pnpm --filter @vexdc/web start
 
 Projects (team `0xbenys-projects`): `vexdc-web`, `vexdc-indexer`. Root directories `apps/web` / `apps/indexer`.
 
-Hobby plan limits crons to **once per day** — indexer uses daily sync/keeper schedules. Upgrade to Pro for `*/5` sync.
+Hobby plan limits Vercel crons to **once per day**. Indexer sync is daily on Vercel plus a GitHub Action every 5 minutes (`.github/workflows/indexer-sync.yml`). Keeper stays on Vercel (Wed/Thu). Set GitHub secret `CRON_SECRET` to match the indexer.
 
 Set `DATABASE_URL` (Neon) and `KEEPER_PRIVATE_KEY` on `vexdc-indexer` before sync/keeper are useful.
 
