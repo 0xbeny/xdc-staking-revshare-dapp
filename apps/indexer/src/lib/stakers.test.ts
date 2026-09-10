@@ -24,16 +24,18 @@ describe("aggregateStakers", () => {
     expect(out.positionCount).toBe(3);
     expect(out.stakers).toHaveLength(2);
 
-    const [first, second] = out.stakers;
-    expect(first.owner).toBe("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-    expect(first.amount).toBe("400");
-    expect(first.positionCount).toBe(2);
-    expect(first.unlockTime).toBe(175);
-    expect(first.shareBps).toBe(8000);
-
-    expect(second.owner).toBe("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-    expect(second.amount).toBe("100");
-    expect(second.shareBps).toBe(2000);
+    expect(out.stakers[0]).toMatchObject({
+      owner: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      amount: "400",
+      positionCount: 2,
+      unlockTime: 175,
+      shareBps: 8000,
+    });
+    expect(out.stakers[1]).toMatchObject({
+      owner: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      amount: "100",
+      shareBps: 2000,
+    });
   });
 
   it("skips zero-amount dust", () => {

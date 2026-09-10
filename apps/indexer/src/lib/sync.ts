@@ -507,6 +507,7 @@ async function processRevenueRegistryLog(
   });
   const blockNumber = log.blockNumber ?? 0n;
   const txHash = log.transactionHash ?? "0x";
+  const logIndex = log.logIndex ?? 0;
 
   switch (decoded.eventName) {
     case "AdapterRegistered": {
@@ -579,11 +580,11 @@ async function processRevenueRegistryLog(
       break;
     }
     case "TermsUpdated": {
-      const { adapter, termsHash, version } = decoded.args;
+      const { adapter, newTerms, version } = decoded.args;
       await db
         .update(adapters)
         .set({
-          termsHash,
+          termsHash: newTerms,
           version: Number(version),
         })
         .where(
