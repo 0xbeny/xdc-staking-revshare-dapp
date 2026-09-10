@@ -24,6 +24,11 @@ export function formatTokenAmount(value: bigint, decimals = 18, digits = 4): str
   }).format(n);
 }
 
+export function formatShareBps(bps: number): string {
+  const pct = Math.max(0, bps) / 100;
+  return `${pct.toFixed(2)}%`;
+}
+
 export function formatDate(tsSeconds: number | bigint): string {
   const ms = Number(tsSeconds) * 1000;
   if (!Number.isFinite(ms) || ms <= 0) return "—";

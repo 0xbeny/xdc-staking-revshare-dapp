@@ -81,3 +81,22 @@ export async function fetchOwnerPositions(address: string): Promise<IndexerPosit
   if (!data) return [];
   return Array.isArray(data) ? data : (data.positions ?? []);
 }
+
+export type ProtocolStaker = {
+  owner: string;
+  amount: string;
+  unlockTime: number;
+  positionCount: number;
+  shareBps: number;
+};
+
+export type ProtocolStakers = {
+  stakers: ProtocolStaker[];
+  totalAmount: string;
+  positionCount: number;
+  stakerCount: number;
+};
+
+export async function fetchProtocolStakers(): Promise<ProtocolStakers | null> {
+  return indexerFetch<ProtocolStakers>("/api/protocol/stakers");
+}

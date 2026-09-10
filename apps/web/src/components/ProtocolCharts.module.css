@@ -4,6 +4,15 @@
   gap: 1rem;
 }
 
+@media (min-width: 860px) {
+  .stack {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    align-items: stretch;
+  }
+}
+
 .panel {
   background: var(--bg-raised);
   border: 1px solid var(--border);
