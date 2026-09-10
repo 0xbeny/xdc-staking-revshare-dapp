@@ -51,8 +51,8 @@ export async function GET(request: Request) {
     rows: venueRows,
     settled: settledRows,
     tokenParam,
-    usdc: deployment?.usdc,
-    wxdc: deployment?.wxdc,
+    usdc: deployment?.usdc ?? null,
+    wxdc: deployment?.wxdc ?? null,
   });
 
   return jsonWithCors(result, { request });

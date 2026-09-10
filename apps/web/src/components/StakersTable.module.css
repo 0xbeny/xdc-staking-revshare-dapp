@@ -192,8 +192,8 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(5rem, auto));
-  gap: 0.75rem 1.25rem;
+  grid-template-columns: repeat(4, minmax(4.5rem, auto));
+  gap: 0.75rem 1.1rem;
   flex-shrink: 0;
 }
 
@@ -431,7 +431,7 @@
 
   .metrics {
     grid-area: metrics;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     width: 100%;
     padding-top: 0.15rem;
     border-top: 1px solid rgba(139, 147, 167, 0.12);

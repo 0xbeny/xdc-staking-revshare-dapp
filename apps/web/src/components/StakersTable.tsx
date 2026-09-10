@@ -52,6 +52,29 @@ function resolveStakerWeight(
   return 0n;
 }
 
+/** Soonest upcoming unlock among open positions; if all past, earliest unlockTime. */
+function resolveNearestUnlock(
+  positions: ProtocolStakerPosition[],
+  row: ProtocolStaker,
+  nowSec: number,
+): number | null {
+  const times =
+    positions.length > 0
+      ? positions.map((p) => p.unlockTime).filter((t) => Number.isFinite(t) && t > 0)
+      : [];
+
+  if (times.length === 0) {
+    // Single-lock: aggregate unlockTime is the lock end. Multi without position
+    // data: skip weighted-average unlockTime from the API.
+    if (row.positionCount <= 1 && row.unlockTime > 0) return row.unlockTime;
+    return null;
+  }
+
+  const upcoming = times.filter((t) => t >= nowSec);
+  if (upcoming.length > 0) return Math.min(...upcoming);
+  return Math.min(...times);
+}
+
 function buildPositions(
   row: ProtocolStaker,
   fetched: IndexerPosition[] | undefined,
@@ -147,6 +170,13 @@ function StakerAccordion({
     ? `${positions.length > 0 ? positions.length : row.positionCount} veXDC`
     : "1 veXDC";
 
+  const unlockTime = useMemo(
+    () => resolveNearestUnlock(positions, row, nowSec),
+    [positions, row, nowSec],
+  );
+  const unlockPending =
+    Boolean(childrenLoading) && multi && positions.length === 0 && unlockTime == null;
+
   return (
     <article className={`${styles.item} ${mine ? styles.you : ""} ${open ? styles.itemOpen : ""}`}>
       <button
@@ -194,6 +224,22 @@ function StakerAccordion({
           <span className={styles.metric}>
             <span className={styles.metricLabel}>Share</span>
             <span className={styles.metricValue}>{formatShareBps(shareBps)}</span>
+          </span>
+          <span className={styles.metric}>
+            <span className={styles.metricLabel} title={multi ? "Nearest unlock" : undefined}>
+              Unlock
+            </span>
+            <span className={styles.metricValue}>
+              {unlockPending ? (
+                "…"
+              ) : unlockTime != null ? (
+                <time dateTime={new Date(unlockTime * 1000).toISOString()}>
+                  {formatDate(unlockTime)}
+                </time>
+              ) : (
+                "—"
+              )}
+            </span>
           </span>
         </span>
         <span className={`${styles.chevron} ${open && multi ? styles.chevronOpen : ""}`} aria-hidden>
