@@ -40,13 +40,12 @@ export const privyConfig: PrivyClientConfig = {
   appearance: {
     theme: "dark",
     accentColor: "#2dd4bf",
-    // Wallet picker: detected extensions first, then the majors; WalletConnect
-    // covers every mobile wallet via QR / deep link.
+    // Wallet picker: detected extensions first, then the browser wallets with
+    // first-class XDC support; WalletConnect covers mobile via QR / deep link.
     walletList: [
       "detected_wallets",
       "metamask",
-      "coinbase_wallet",
-      "rainbow",
+      "rabby_wallet",
       "okx_wallet",
       "wallet_connect",
     ],
