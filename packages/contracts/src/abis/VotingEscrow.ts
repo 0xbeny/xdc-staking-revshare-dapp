@@ -24,6 +24,11 @@ export const VotingEscrowAbi = [
         "internalType": "address"
       },
       {
+        "name": "capGuardian_",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "maxPenaltyBps_",
         "type": "uint256",
         "internalType": "uint256"
@@ -271,6 +276,19 @@ export const VotingEscrowAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "capGuardian",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -993,6 +1011,19 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "setCapGuardian",
+    "inputs": [
+      {
+        "name": "newGuardian",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setDepositor",
     "inputs": [
       {
@@ -1050,6 +1081,19 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "setStakingCap",
+    "inputs": [
+      {
+        "name": "newCap",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setTier",
     "inputs": [
       {
@@ -1094,6 +1138,19 @@ export const VotingEscrowAbi = [
         "name": "",
         "type": "int128",
         "internalType": "int128"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "stakingCap",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -1512,6 +1569,25 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "event",
+    "name": "CapGuardianSet",
+    "inputs": [
+      {
+        "name": "previous",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "next",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Deposit",
     "inputs": [
       {
@@ -1769,6 +1845,25 @@ export const VotingEscrowAbi = [
   {
     "type": "event",
     "name": "PenaltySplitBpsSet",
+    "inputs": [
+      {
+        "name": "oldValue",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newValue",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "StakingCapSet",
     "inputs": [
       {
         "name": "oldValue",
@@ -2098,6 +2193,11 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "NotCapAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotDepositor",
     "inputs": []
   },
@@ -2146,6 +2246,16 @@ export const VotingEscrowAbi = [
   {
     "type": "error",
     "name": "Soulbound",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StakingCapExceeded",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "StakingCapTooLow",
     "inputs": []
   },
   {

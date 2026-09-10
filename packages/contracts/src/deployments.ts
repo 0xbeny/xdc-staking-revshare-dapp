@@ -35,22 +35,25 @@ export const MAINNET_WXDC =
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const satisfies Address;
 
-/** Live Apothem deployment (2026-09-09). */
+/** Live Apothem deployment (2026-09-10).
+ * After a full Apothem redeploy (e.g. stakingCap escrow), replace this object from
+ * `deployments/51.json` produced by `make deploy-apothem` — do not invent addresses.
+ */
 export const deployment51: DeploymentAddresses = {
   chainId: 51,
-  deployedAt: 1788966270,
-  startBlock: 86550059,
-  systemAccess: "0xD56B1D909c98122aD5A11F94017a7cbc7246aEAB",
-  votingEscrow: "0x4255B31A1Fcb7F5Db498c0FdBfeCE7736bc09C06",
-  feeDistributor: "0x25951a03E06348EeD4bF20CfeFcaE67135B6C0E1",
-  feeDistributorImpl: "0x9C34946BC18Cf3dAbd7125a504A9Afa7e87FbEC8",
-  revenueRegistry: "0x9b8993Afe26B19b3a33774Bd708BA8E637fBF2ED",
-  revenueRegistryImpl: "0x423A0905262d42413a24d810C2e681458ed8db7a",
-  zapDepositor: "0x5C1cb9BCA16C35E5b6C82e13891D11130b698CF1",
-  veVotesAdapter: "0x1d19269D30e945Ed9e1ED9A0BC5706aa4CDd6d3c",
+  deployedAt: 1789035576,
+  startBlock: 86585078,
+  systemAccess: "0x5F16a238a3ACCFAD02Dd3C51BCd2696397256222",
+  votingEscrow: "0x159444CFDB6CEbb5d6924833A0F56Cc5231Dae50",
+  feeDistributor: "0x5BD90bFc4943e12Df81A9a1F03B344689481237E",
+  feeDistributorImpl: "0x116FE1C8c938072f6Eac77297CBFE0AAa4615acf",
+  revenueRegistry: "0xc34bD940313529E1239694F4E6290049F99322eA",
+  revenueRegistryImpl: "0x83C5fed1eCCBb4981b735Dbf79e191BF16c65dA9",
+  zapDepositor: "0x589173ed591aDcb3Ed373032b03CC7580e4cE7eD",
+  veVotesAdapter: "0xB83F2fc7b784681654Aed11A7195bbe00663Ba5C",
   wxdc: APOTHEM_WXDC,
   usdc: "0x0A9f7e55493058f69DB3Fc2a0E27CFA13C8dAC1F",
-  feeSplitter: "0x71dE2A8004650b18F726204bc64b2AA59794f668",
+  feeSplitter: "0xeeeb530EBaBB698386fDaf21449CFdCBC56215b5",
   timelock: "0x2B940B045DF358557f04Ecb176da796d412cC1ED",
   guardian: "0x2B940B045DF358557f04Ecb176da796d412cC1ED",
   treasury: "0x0cc6b0c5b944a28D817Ef0D3f3183c25582A62b5",
