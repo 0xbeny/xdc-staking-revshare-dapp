@@ -335,5 +335,20 @@ contract GuardsTest is Base {
         vm.expectRevert(VotingEscrow.DepositorAlreadySet.selector);
         escrow.setDepositor(address(0xBEEF));
         assertEq(escrow.depositor(), address(zap));
+        assertEq(escrow.bootstrapAdmin(), address(0));
+    }
+
+    function test_setDepositorRejectsUnauthorizedCaller() public {
+        VotingEscrow local = new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, 5000, 2000);
+        assertEq(local.bootstrapAdmin(), address(this));
+
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        local.setDepositor(alice);
+
+        assertEq(local.depositor(), address(0));
+        local.setDepositor(address(this));
+        assertEq(local.depositor(), address(this));
+        assertEq(local.bootstrapAdmin(), address(0));
     }
 }

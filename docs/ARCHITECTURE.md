@@ -143,8 +143,10 @@ hard-capped at 7 days via `HARD_MAX_WITHDRAWAL_COOLDOWN`):
 1. **Request** — `requestWithdraw` / `requestEmergencyExit`, or the first call to
    `withdraw` / `emergencyExit` when no request is pending. Early-exit penalty is
    **snapshotted at request**. While a request is pending, amount/unlock increases revert.
-2. **Finalize** — after `requestedAt + withdrawalCooldown`, a subsequent `withdraw` /
-   `emergencyExit` (or the same call when cooldown is `0`) moves principal.
+2. **Finalize** — after the snapshotted `readyAt` (request time + then-current
+   `withdrawalCooldown`), a subsequent `withdraw` / `emergencyExit` (or the same call when
+   cooldown is `0`) moves principal. Later governance changes to `withdrawalCooldown` do not
+   move a pending request's deadline.
 
 `cancelExitRequest` clears a pending request with no funds moved.
 
@@ -165,14 +167,18 @@ clamped by the immutable constants `HARD_MAX_PENALTY_BPS = 5000` and
 PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers
 (after the cooldown finalize step).
 
-**Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance lowering
-the global cap helps everyone at once (`min`); raising it never reaches an existing position.
-`increaseAmount` re-weights the cap so old principal keeps its exact terms and new principal
-enters at current terms:
+**Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance may only
+**lower** `maxPenaltyBps` (monotonically non-increasing); raises revert. Lowering helps
+everyone at once via `min(positionCap, global)`. `increaseAmount` re-weights the cap so old
+principal keeps its exact terms and new principal enters at current terms:
 
 ```
 newCap = (oldPrincipal × oldCap + added × maxPenaltyBps) / newPrincipal
 ```
+
+Because the global cannot rise, a single weighted cap preserves the paper invariant that
+governance cannot worsen an existing commitment — including across later `increaseAmount`
+calls — without per-tranche accounting.
 
 `increaseUnlockTime` (and `keepAtMaxLock`) never touch the cap.
 
@@ -238,6 +244,8 @@ epochs so a bounded `settle` inside `claim` still prompts another call. The curs
 
 `claimAndLock` claims WXDC and folds it straight back via `increaseAmount` — so the
 weighted-cap rule applies — and degrades to a plain claim once the lock has expired or closed.
+Authorized callers: the position owner, or a `KEEPER` when `autoCompound[tokenId]` is set.
+Escrow operators cannot compound.
 
 ### Forfeiture bucket
 
@@ -258,10 +266,12 @@ it never backdates it and never loses it.
 ## RevenueRegistry
 
 Pure metadata: `(dapp, mode, committedBps, version, termsHash, active)` per adapter, plus
-lifetime contribution per `(adapter, token)`. It never holds a balance or an allowance. Terms
-are versioned metadata; changing them cannot change an adapter's on-chain behaviour — a new
-commitment means a new adapter. `setDistributor` is one-shot (mirrors `FeeDistributor.setEscrow`).
-Modes A/B/B2/B3 require `committedBps ∈ (0, 10_000]`; Mode C may record `0` as metadata.
+lifetime contribution per `(adapter, token)`. It never holds a balance or an allowance. Status
+and terms metadata are **governance-controlled and take effect immediately** — there is no
+on-chain notice period or pending-deactivation queue. Changing committed economics requires a
+new adapter; `updateTerms` only updates the human-readable record. `setDistributor` is one-shot
+(mirrors `FeeDistributor.setEscrow`). Modes A/B/B2/B3 require `committedBps ∈ (0, 10_000]`;
+Mode C may record `0` as metadata.
 
 ## Adapters
 
@@ -276,8 +286,8 @@ additionally leave the dedicated fee Safe at a zero balance — B3 asserts that 
 **Integration guides:** [adapters/README.md](adapters/README.md) (one page per mode) and
 [INTEGRATION.md](INTEGRATION.md).
 
-The Attestor (Mode C) is the one adapter that serves many dApps: one immutable record per
-`(dapp, token, sourceEpoch)` via `postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)`;
+The Attestor (Mode C) is **per-dApp**: `DAPP` is immutable at construction. One immutable
+record per `(dapp, token, sourceEpoch)` via `postRevenue(token, sourceEpoch, gross, adjustment, metadataHash)`;
 funds transferred in the same transaction, `distributionEpoch` assigned at receipt. Corrections
 are posted against a later source period; a negative adjustment nets against that transfer and
 never pulls from the distributor.

@@ -1,8 +1,10 @@
-name: CI (on demand)
+name: CI
 
-# The canonical gate is `make ci`, run locally. This workflow mirrors it and is kept for
-# occasional manual runs only; it does not trigger on push or pull request.
+# Mandatory merge gate. Mirrors `make ci` locally.
 on:
+  push:
+    branches: [main, master]
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -95,7 +97,6 @@ jobs:
           target: .
           fail-on: high
           sarif: results.sarif
-        continue-on-error: true
       - uses: github/codeql-action/upload-sarif@v3
         if: always() && steps.slither.outputs.sarif != ''
         with:

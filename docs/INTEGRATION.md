@@ -60,6 +60,9 @@ For every locker call sequence (deposit, compound, cooldown exits, Safe, etc.) s
 
 ## Lifecycle
 
+Registry status is **governance-controlled metadata** and takes effect immediately — there is
+no on-chain notice period.
+
 - **Deactivate:** timelock calls `registry.deactivateAdapter(adapter)`. Notifications stop;
   funds already notified stay claimable.
 - **Change terms:** deploy a new adapter with the new bps, register it, deactivate the old one.

@@ -153,9 +153,14 @@ contract FeeDistributorClaimTest is Base {
         vm.expectRevert(FeeDistributor.NotAuthorized.selector);
         distributor.claimAndLock(a);
 
+        // Escrow operator may extend locks but cannot force compounding.
         vm.prank(alice);
         escrow.setOperator(bob, true);
         vm.prank(bob);
+        vm.expectRevert(FeeDistributor.NotAuthorized.selector);
+        distributor.claimAndLock(a);
+
+        vm.prank(alice);
         distributor.claimAndLock(a);
     }
 

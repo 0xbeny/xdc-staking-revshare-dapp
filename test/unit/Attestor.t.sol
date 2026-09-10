@@ -18,7 +18,7 @@ contract AttestorTest is Base {
     function test_postRevenueIsAtomicRecordPlusTransfer() public {
         uint64 sourceEpoch = uint64(_currentEpoch() - 1);
         vm.prank(reporter);
-        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 5000e6, 0, keccak256("report"));
+        attestor.postRevenue(address(usdc), sourceEpoch, 5000e6, 0, keccak256("report"));
 
         Attestor.Record memory r = attestor.records(dapp, address(usdc), sourceEpoch);
         assertEq(r.net, 5000e6);
@@ -32,9 +32,9 @@ contract AttestorTest is Base {
     function test_duplicateRecordReverts() public {
         uint64 sourceEpoch = uint64(_currentEpoch() - 1);
         vm.startPrank(reporter);
-        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 5000e6, 0, "");
+        attestor.postRevenue(address(usdc), sourceEpoch, 5000e6, 0, "");
         vm.expectRevert(Attestor.DuplicateRecord.selector);
-        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 6000e6, 0, "");
+        attestor.postRevenue(address(usdc), sourceEpoch, 6000e6, 0, "");
         vm.stopPrank();
     }
 
@@ -46,7 +46,7 @@ contract AttestorTest is Base {
 
         uint256 receiptEpoch = _currentEpoch();
         vm.prank(reporter);
-        attestor.postRevenue(dapp, address(usdc), oldSource, 5000e6, 0, "");
+        attestor.postRevenue(address(usdc), oldSource, 5000e6, 0, "");
 
         assertEq(distributor.epochRevenue(address(usdc), oldSource), 0, "sourceEpoch is metadata only");
         assertEq(distributor.epochRevenue(address(usdc), receiptEpoch), 5000e6, "receipt epoch decides");
@@ -55,21 +55,21 @@ contract AttestorTest is Base {
     function test_sourceEpochMustBeClosed() public {
         vm.prank(reporter);
         vm.expectRevert(Attestor.SourceEpochNotClosed.selector);
-        attestor.postRevenue(dapp, address(usdc), uint64(_currentEpoch()), 1000e6, 0, "");
+        attestor.postRevenue(address(usdc), uint64(_currentEpoch()), 1000e6, 0, "");
     }
 
     /// @dev Errors are corrected against a *later* source period, never by a clawback.
     function test_positiveAdjustmentAgainstALaterPeriodTransfersMore() public {
         uint64 first = uint64(_currentEpoch() - 1);
         vm.prank(reporter);
-        attestor.postRevenue(dapp, address(usdc), first, 5000e6, 0, "");
+        attestor.postRevenue(address(usdc), first, 5000e6, 0, "");
 
         _nextEpoch();
         uint64 later = uint64(_currentEpoch() - 1);
         uint256 receiptEpoch = _currentEpoch();
 
         vm.prank(reporter);
-        uint256 net = attestor.postRevenue(dapp, address(usdc), later, 4000e6, 1000e6, "under-reported earlier");
+        uint256 net = attestor.postRevenue(address(usdc), later, 4000e6, 1000e6, "under-reported earlier");
 
         assertEq(net, 5000e6);
         assertEq(distributor.epochRevenue(address(usdc), receiptEpoch), 5000e6);
@@ -78,14 +78,14 @@ contract AttestorTest is Base {
     function test_negativeAdjustmentOffsetsTheLaterTransferAndNeverClawsBack() public {
         uint64 first = uint64(_currentEpoch() - 1);
         vm.prank(reporter);
-        attestor.postRevenue(dapp, address(usdc), first, 5000e6, 0, "");
+        attestor.postRevenue(address(usdc), first, 5000e6, 0, "");
         uint256 heldAfterFirst = usdc.balanceOf(address(distributor));
 
         _nextEpoch();
         uint64 later = uint64(_currentEpoch() - 1);
 
         vm.prank(reporter);
-        uint256 net = attestor.postRevenue(dapp, address(usdc), later, 4000e6, -1000e6, "over-reported earlier");
+        uint256 net = attestor.postRevenue(address(usdc), later, 4000e6, -1000e6, "over-reported earlier");
 
         assertEq(net, 3000e6, "the correction is netted off the later transfer");
         assertGt(usdc.balanceOf(address(distributor)), heldAfterFirst, "the distributor is never drained");
@@ -94,13 +94,13 @@ contract AttestorTest is Base {
     function test_negativeNetReverts() public {
         vm.prank(reporter);
         vm.expectRevert(Attestor.NegativeNet.selector);
-        attestor.postRevenue(dapp, address(usdc), uint64(_currentEpoch() - 1), 1000e6, -2000e6, "");
+        attestor.postRevenue(address(usdc), uint64(_currentEpoch() - 1), 1000e6, -2000e6, "");
     }
 
     function test_zeroNetRecordsWithoutTransferring() public {
         uint64 sourceEpoch = uint64(_currentEpoch() - 1);
         vm.prank(reporter);
-        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 1000e6, -1000e6, "fully offset");
+        attestor.postRevenue(address(usdc), sourceEpoch, 1000e6, -1000e6, "fully offset");
 
         assertTrue(attestor.posted(attestor.key(dapp, address(usdc), sourceEpoch)));
         assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 0);
@@ -111,7 +111,15 @@ contract AttestorTest is Base {
         uint64 sourceEpoch = uint64(_currentEpoch() - 1);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, alice, role));
-        attestor.postRevenue(dapp, address(usdc), sourceEpoch, 1000e6, 0, "");
+        attestor.postRevenue(address(usdc), sourceEpoch, 1000e6, 0, "");
+    }
+
+    function test_attestorIsBoundToRegisteredDapp() public {
+        assertEq(attestor.DAPP(), dapp);
+        address other = makeAddr("otherDapp");
+        Attestor foreign = new Attestor(address(distributor), address(access), other);
+        assertEq(foreign.DAPP(), other);
+        assertTrue(attestor.DAPP() != foreign.DAPP());
     }
 
     /// @dev The reporter role lives on `SystemAccess` for this attestor target; the timelock

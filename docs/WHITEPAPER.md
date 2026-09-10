@@ -327,12 +327,13 @@ the dApp itself deployed.
 
 Every game above assumes the rules hold. In most protocols that assumption is itself a game
 against governance. Here, the moves governance could use to defect are removed rather than
-discouraged: it cannot raise any existing position's penalty cap (grandfathering is enforced
-in the escrow), cannot touch the weight formula or penalty destinations (immutable), cannot
-block exits (the cooldown is hard-capped at 7 days), and cannot reach principal through any
-upgrade (the vault is not upgradeable). The players' subgame-perfect strategies can therefore
-be computed at lock time — which is precisely what "exit economics must be predictable at
-lock time" means in game-theoretic terms.
+discouraged: it cannot raise `maxPenaltyBps` at all (monotonically non-increasing) and therefore
+cannot raise any existing position's effective penalty cap, cannot touch the weight formula or
+penalty destinations (immutable), cannot block exits beyond a hard-capped cooldown (and pending
+`readyAt` is snapshotted), and cannot reach principal through any upgrade (the vault is not
+upgradeable). The players' subgame-perfect strategies can therefore be computed at lock time —
+which is precisely what "exit economics must be predictable at lock time" means in
+game-theoretic terms.
 
 ---
 

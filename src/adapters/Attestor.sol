@@ -7,9 +7,9 @@ import {EpochTime} from "../libraries/EpochTime.sol";
 import {Roles} from "../libraries/Roles.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 
 /// @title Attestor
 /// @notice Mode C — atomic epoch attestation (§3.2 #6).
@@ -17,6 +17,9 @@ import {Context} from "@openzeppelin/contracts/utils/Context.sol";
 /// @dev Exactly one immutable record per `(dapp, token, sourceEpoch)`. The record and the fund
 ///      transfer are a single atomic transaction; duplicates revert. There is no pre-finalization
 ///      superseding and no mutable state on a record.
+///
+///      Each Attestor instance is bound to one `DAPP` so a reporter cannot attribute revenue to
+///      an unrelated dApp identity.
 ///
 ///      Errors are corrected by posting a signed adjustment against a *later* source period:
 ///      a positive adjustment transfers additional funds, a negative adjustment offsets against
@@ -44,6 +47,8 @@ contract Attestor is Context, ReentrancyGuard {
 
     address public immutable DISTRIBUTOR;
     ISystemAccess public immutable AUTHORITY;
+    /// @notice dApp this attestor attributes all posts to. Matches registry registration.
+    address public immutable DAPP;
 
     mapping(bytes32 key => Record) private _records;
     mapping(bytes32 key => bool) public posted;
@@ -66,12 +71,14 @@ contract Attestor is Context, ReentrancyGuard {
     error NegativeNet();
 
     /// @param authority_ `SystemAccess` hub. `REPORTER_ROLE` for this contract is granted there.
-    constructor(address distributor_, address authority_) {
-        if (distributor_ == address(0) || authority_ == address(0)) {
+    /// @param dapp_ Immutable dApp identity for every record this instance posts.
+    constructor(address distributor_, address authority_, address dapp_) {
+        if (distributor_ == address(0) || authority_ == address(0) || dapp_ == address(0)) {
             revert ZeroAddress();
         }
         DISTRIBUTOR = distributor_;
         AUTHORITY = ISystemAccess(authority_);
+        DAPP = dapp_;
     }
 
     function hasRole(bytes32 role, address account) external view returns (bool) {
@@ -88,36 +95,26 @@ contract Attestor is Context, ReentrancyGuard {
     /// @param sourceEpoch The period the revenue relates to. Metadata only; must already be closed.
     /// @param gross The attested gross amount for that period.
     /// @param adjustment A signed correction for an *earlier* period, settled against this one.
-    function postRevenue(
-        address dapp,
-        address token,
-        uint64 sourceEpoch,
-        uint256 gross,
-        int256 adjustment,
-        bytes32 metadataHash
-    ) external nonReentrant returns (uint256 net) {
+    function postRevenue(address token, uint64 sourceEpoch, uint256 gross, int256 adjustment, bytes32 metadataHash)
+        external
+        nonReentrant
+        returns (uint256 net)
+    {
         AUTHORITY.checkRole(address(this), REPORTER_ROLE, _msgSender());
-        if (dapp == address(0)) {
-            revert ZeroAddress();
-        }
         if (sourceEpoch >= EpochTime.currentEpoch()) {
             revert SourceEpochNotClosed();
         }
 
+        address dapp = DAPP;
         bytes32 k = key(dapp, token, sourceEpoch);
         if (posted[k]) {
             revert DuplicateRecord();
         }
 
-        // `gross` is bounded by an ERC20 supply; the int256 cast cannot wrap in practice and
-        // an overflowing value would revert on the transfer below regardless.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        int256 signedNet = int256(gross) + adjustment;
+        int256 signedNet = SafeCast.toInt256(gross) + adjustment;
         if (signedNet < 0) {
             revert NegativeNet();
         }
-        // Checked non-negative on the line above.
-        // forge-lint: disable-next-line(unsafe-typecast)
         net = uint256(signedNet);
 
         uint64 distributionEpoch = EpochTime.currentEpoch().toUint64();

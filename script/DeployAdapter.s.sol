@@ -79,7 +79,7 @@ contract DeployAdapter is Script {
             );
             registryMode = IRevenueRegistry.Mode.ZODIAC_SAFE;
         } else if (_eq(mode, "C")) {
-            adapter = address(new Attestor(distributor, vm.envAddress("SYSTEM_ACCESS")));
+            adapter = address(new Attestor(distributor, vm.envAddress("SYSTEM_ACCESS"), vm.envAddress("DAPP")));
             registryMode = IRevenueRegistry.Mode.ATTESTATION;
         } else {
             revert UnknownMode(mode);
@@ -107,10 +107,7 @@ contract DeployAdapter is Script {
             console2.log("Mode C: timelock must grant REPORTER on SystemAccess for this attestor:");
             console2.logBytes(
                 abi.encodeWithSignature(
-                    "grantRole(address,bytes32,address)",
-                    adapter,
-                    keccak256("REPORTER_ROLE"),
-                    vm.envAddress("REPORTER")
+                    "grantRole(address,bytes32,address)", adapter, keccak256("REPORTER_ROLE"), vm.envAddress("REPORTER")
                 )
             );
         }

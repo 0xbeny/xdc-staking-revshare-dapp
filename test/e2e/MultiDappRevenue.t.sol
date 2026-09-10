@@ -42,7 +42,7 @@ contract MultiDappRevenueTest is Base {
         usdc.approve(address(attestor), type(uint256).max);
         // Week index of a unix timestamp; nowhere near the uint64 ceiling.
         // forge-lint: disable-next-line(unsafe-typecast)
-        attestor.postRevenue(dapp, address(usdc), uint64(epoch - 1), 4000e6, 0, keccak256("q1"));
+        attestor.postRevenue(address(usdc), uint64(epoch - 1), 4000e6, 0, keccak256("q1"));
         vm.stopPrank();
         expected += 4000e6;
 

@@ -401,10 +401,11 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         return _compound(tokenId);
     }
 
-    /// @dev The owner, an escrow operator of the owner, or the keeper for an opted-in position.
+    /// @dev Owner, or the keeper for an opted-in position. Escrow operators may only extend —
+    ///      they cannot force compounding (audit: least privilege).
     function _mayCompound(uint256 tokenId, address caller) internal view returns (bool) {
         address owner = escrow.ownerOf(tokenId);
-        if (caller == owner || escrow.isOperator(owner, caller)) {
+        if (caller == owner) {
             return true;
         }
         return autoCompound[tokenId] && authority.hasRole(address(this), KEEPER_ROLE, caller);

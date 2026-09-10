@@ -137,50 +137,73 @@ contract VotingEscrowPenaltyTest is Base {
                             GRANDFATHERING (#5)
     //////////////////////////////////////////////////////////////*/
 
-    function test_grandfathering_globalIncreaseNeverWorsensExistingPosition() public {
+    function test_grandfathering_globalDecreaseAppliesImmediately() public {
         uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
         assertEq(escrow.locked(tokenId).penaltyCapBps, 5000);
 
-        // Governance lowers, then raises back. The position keeps its snapshot cap as a ceiling.
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
         assertEq(escrow.effectivePenaltyCapBps(tokenId), 1000, "reductions apply immediately");
-
-        vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 5000, "back to the position's own cap");
+        assertEq(escrow.locked(tokenId).penaltyCapBps, 5000, "stored cap is unchanged");
     }
 
-    function test_grandfathering_lowCapPositionIsNeverRaised() public {
+    function test_maxPenaltyBpsIsMonotonicallyNonIncreasing() public {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
+        assertEq(escrow.maxPenaltyBps(), 1000);
+
+        vm.prank(timelock);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setMaxPenaltyBps(1001);
+
+        vm.prank(timelock);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setMaxPenaltyBps(5000);
+
+        // Same value is a no-op increase of zero — allowed.
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(1000);
+        assertEq(escrow.maxPenaltyBps(), 1000);
+    }
+
+    /// @dev Stateful sequence the old fuzz suite missed: lower → raise attempt must not worsen.
+    function test_grandfathering_governanceCannotRaiseAfterLowering() public {
         uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 1000);
 
-        vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
-
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 1000, "an increase can never reach an existing position");
-    }
-
-    /// @dev The loophole grandfathering would otherwise open: park a tiny position under cheap
-    ///      terms, then pour size into it for a discounted exit.
-    function test_increaseAmount_reweightsCapPreventingTheParkedPositionLoophole() public {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
-        uint256 tokenId = _lock(alice, 1 ether, 52 weeks); // tiny position at the cheap cap
+        uint256 effectiveAtLow = escrow.effectivePenaltyCapBps(tokenId);
+        assertEq(effectiveAtLow, 1000);
 
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setMaxPenaltyBps(4000);
+
+        assertEq(escrow.effectivePenaltyCapBps(tokenId), effectiveAtLow, "raise attempt left economics untouched");
+    }
+
+    /// @dev create @ 10% → global cannot jump to 50%; adding principal uses current (≤) global.
+    function test_increaseAmount_afterGlobalDropPreservesEffectiveEconomics() public {
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(1000);
+        uint256 tokenId = _lock(alice, 100 ether, 52 weeks);
+
+        // Further drop, then add principal — weighted avg, effective still min(stored, global).
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(500);
 
         vm.startPrank(alice);
-        wxdc.approve(address(escrow), 999 ether);
-        escrow.increaseAmount(tokenId, 999 ether); // pour size in at the expensive cap
+        wxdc.approve(address(escrow), 100 ether);
+        escrow.increaseAmount(tokenId, 100 ether);
         vm.stopPrank();
 
-        // (1 * 1000 + 999 * 5000) / 1000 = 4996
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 4996);
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 4996);
+        // (100*1000 + 100*500) / 200 = 750
+        assertEq(escrow.locked(tokenId).penaltyCapBps, 750);
+        assertEq(escrow.effectivePenaltyCapBps(tokenId), 500);
+
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(200);
+        assertEq(escrow.effectivePenaltyCapBps(tokenId), 200, "further reductions still help");
     }
 
     function test_increaseAmount_oldPrincipalKeepsItsTermsExactly() public {
@@ -205,7 +228,7 @@ contract VotingEscrowPenaltyTest is Base {
         uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
 
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
+        escrow.setMaxPenaltyBps(1000);
 
         vm.startPrank(alice);
         escrow.increaseUnlockTime(tokenId, block.timestamp + 52 weeks);
@@ -224,7 +247,7 @@ contract VotingEscrowPenaltyTest is Base {
         escrow.setOperator(keeper, true);
 
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
+        escrow.setMaxPenaltyBps(500);
 
         vm.prank(keeper);
         escrow.keepAtMaxLock(tokenId);

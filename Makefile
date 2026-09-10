@@ -14,7 +14,7 @@ SLITHER ?= $(if $(wildcard .venv/bin/slither),.venv/bin/slither,slither)
         anvil deploy-local deploy-apothem-mocks deploy-apothem deploy-apothem-pk deploy-apothem-continue \
         deploy-mainnet deploy-adapter clean
 
-## The full local gate — the same steps the on-demand GitHub workflow runs.
+## The full local gate — the same steps the GitHub Actions PR/push workflow runs.
 ci: fmt-check lint-ci lint-tests sizes test test-invariant-strict coverage slither
 	@echo "✔ local CI passed ($(shell $(FORGE) --version | head -1))"
 
@@ -36,11 +36,13 @@ lint-tests:
 sizes:
 	$(FORGE) build --sizes
 
-## Slither, if installed (`make slither-install` puts it in ./.venv). Skips with a notice otherwise.
+## Slither is required for `make ci`. Install with `make slither-install` if missing.
 slither:
 	@if command -v $(SLITHER) >/dev/null 2>&1 || [ -x "$(SLITHER)" ]; then \
 		$(SLITHER) . --config-file slither.config.json --fail-high; \
-	else echo "· slither not installed — run 'make slither-install' (skipped)"; fi
+	else \
+		echo "✘ slither not installed — run 'make slither-install'"; exit 1; \
+	fi
 
 slither-install:
 	python3 -m venv .venv && .venv/bin/pip install --quiet --upgrade pip slither-analyzer

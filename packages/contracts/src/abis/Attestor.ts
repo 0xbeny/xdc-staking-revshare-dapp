@@ -12,6 +12,11 @@ export const AttestorAbi = [
         "name": "authority_",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "dapp_",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "nonpayable"
@@ -25,6 +30,19 @@ export const AttestorAbi = [
         "name": "",
         "type": "address",
         "internalType": "contract ISystemAccess"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "DAPP",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -136,11 +154,6 @@ export const AttestorAbi = [
     "type": "function",
     "name": "postRevenue",
     "inputs": [
-      {
-        "name": "dapp",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "token",
         "type": "address",
@@ -429,6 +442,17 @@ export const AttestorAbi = [
         "type": "uint8",
         "internalType": "uint8"
       },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "SafeCastOverflowedUintToInt",
+    "inputs": [
       {
         "name": "value",
         "type": "uint256",

@@ -97,8 +97,9 @@ contract ZapDepositorTest is Base {
         uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
         assertEq(capBefore, 4000);
 
+        // Global can only fall; stranger funding re-weights toward the cheaper current terms.
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(5000);
+        escrow.setMaxPenaltyBps(2000);
 
         vm.startPrank(bob);
         wxdc.approve(address(escrow), 100 ether);
@@ -107,8 +108,8 @@ contract ZapDepositorTest is Base {
 
         assertEq(escrow.ownerOf(tokenId), alice, "ownership unchanged");
         assertEq(escrow.locked(tokenId).amount, 200 ether);
-        // newCap = (100e*4000 + 100e*5000) / 200e = 4500
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 4500);
+        // newCap = (100e*4000 + 100e*2000) / 200e = 3000
+        assertEq(escrow.locked(tokenId).penaltyCapBps, 3000);
         assertEq(wxdc.balanceOf(address(escrow)), escrow.totalLocked());
     }
 

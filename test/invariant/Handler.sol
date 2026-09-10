@@ -219,7 +219,8 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
     function setPenaltyParams(uint16 cap, uint16 split) external {
         vm.startPrank(TIMELOCK);
-        ESCROW.setMaxPenaltyBps(bound(cap, 0, 5000));
+        // Global penalty is monotonically non-increasing.
+        ESCROW.setMaxPenaltyBps(bound(cap, 0, ESCROW.maxPenaltyBps()));
         ESCROW.setPenaltySplitBps(bound(split, 0, 5000));
         vm.stopPrank();
     }

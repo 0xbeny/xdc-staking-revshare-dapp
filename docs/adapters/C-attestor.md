@@ -12,14 +12,15 @@ Revenue is **measured off-chain** (or on another chain) and brought on-chain as 
 - Off-chain billing / enterprise revenue
 - Cases where there is no on-chain fee stream to skim
 
-One Attestor can serve **many dApps**; uniqueness is per `(dapp, token, sourceEpoch)`.
+Each Attestor instance is bound to **one dApp** (`immutable DAPP`). Deploy a separate
+instance per dApp. Uniqueness is per `(dapp, token, sourceEpoch)`.
 
 ## How it works
 
 ```
 Reporter (REPORTER role on SystemAccess for this attestor)
-  → postRevenue(dapp, token, sourceEpoch, gross, adjustment, metadataHash)
-       ├─ writes one immutable Record
+  → postRevenue(token, sourceEpoch, gross, adjustment, metadataHash)
+       ├─ writes one immutable Record attributed to DAPP
        ├─ net = gross + adjustment (must be ≥ 0)
        └─ if net > 0: pull net from reporter → notifyRevenue(distributor)
 ```
@@ -28,6 +29,7 @@ Important rules:
 
 | Concept | Meaning |
 |---------|---------|
+| `DAPP` | Immutable at construction; every record uses this identity. |
 | `sourceEpoch` | Metadata for “which period this report is about.” Must already be **closed**. |
 | `distributionEpoch` | Set to **current** epoch at receipt. The reporter **cannot** choose it. |
 | Duplicate key | Second post for the same `(dapp, token, sourceEpoch)` reverts. |
@@ -49,8 +51,7 @@ export ADAPTER_MODE=C
 export SYSTEM_ACCESS=0x...        # deployments/<chainId>.json → systemAccess
 export REPORTER=0x...             # will receive REPORTER_ROLE
 export REWARD_TOKENS=0xWXDC,0xUSDC
-# DAPP / DAPP_TREASURY / COMMITTED_BPS still used for registerAdapter metadata
-export DAPP=0x...                 # first dApp identity (or placeholder for multi-dapp)
+export DAPP=0x...                 # immutable dApp identity for this attestor
 export COMMITTED_BPS=0            # Mode C may use 0 in the registry
 make deploy-adapter NETWORK=xdc DEPLOYER_ACCOUNT=deployer
 ```
@@ -62,7 +63,7 @@ The script prints:
 
 ### 2. Timelock actions
 
-1. Register the attestor (mode `ATTESTATION`).
+1. Register the attestor (mode `ATTESTATION`) against the same `DAPP`.
 2. Grant `REPORTER_ROLE` on `SystemAccess` for **this attestor address**.
 
 ### 3. Wire the reporter
@@ -76,7 +77,6 @@ IERC20(token).approve(attestor, type(uint256).max);
 ```solidity
 // sourceEpoch must be < currentEpoch
 attestor.postRevenue(
-  dapp,
   USDC,
   sourceEpoch,
   50_000e6,   // gross
@@ -98,7 +98,7 @@ Nothing is ever pulled back from `FeeDistributor`.
 
 ### 6. Verify
 
-- `attestor.posted(key(dapp, token, sourceEpoch)) == true`
+- `attestor.posted(key(DAPP, token, sourceEpoch)) == true`
 - `records(...).distributionEpoch == epoch at post time`
 - Distributor pot for that receipt epoch increased by `net`
 
@@ -116,12 +116,4 @@ Nothing is ever pulled back from `FeeDistributor`.
   `access.revokeRole(attestor, REPORTER, old)` /
   `grantRole(attestor, REPORTER, new)`.
 - **Stop posts:** deactivate in registry and/or revoke reporter.
-- **New terms:** usually a new attestor instance + re-grant + re-register.
-
-## Pitfalls
-
-- Posting for the **current** (open) `sourceEpoch` → `SourceEpochNotClosed`.
-- Duplicate period → `DuplicateRecord`.
-- `gross + adjustment < 0` → `NegativeNet`.
-- Granting reporter on the wrong target / forgetting SystemAccess grant → unauthorized post.
-- Expecting `sourceEpoch` to choose the claim pot — only **receipt time** does.
+- **New terms / new dApp:** new attestor instance + re-grant + re-register.

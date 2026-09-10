@@ -5,10 +5,10 @@
 | Actor | Can | Cannot |
 |---|---|---|
 | **User** | lock, increase, extend, withdraw at expiry, exit early at the immutable penalty, claim, set recipient / keeper flags / operators | transfer, split, merge, wrap, avoid the penalty |
-| **Operator** (user-approved) | `increaseUnlockTime` on that user's positions | anything else |
-| **Keeper** (`KEEPER_ROLE`) | extend opted-in locks in the window, compound opted-in rewards | move principal, redirect claims, change parameters |
+| **Operator** (user-approved) | `increaseUnlockTime` on that user's positions | compound / `claimAndLock`, move principal, anything else |
+| **Keeper** (`KEEPER_ROLE`) | extend opted-in locks in the window, compound opted-in rewards (`autoCompound`) | move principal, redirect claims, change parameters |
 | **Guardian** (`PAUSER_ROLE`) | pause the distributor | unpause, touch the escrow, touch parameters |
-| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | tune `maxPenaltyBps` / `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter | move principal, change penalty destinations, raise an existing position's cap, bypass the clamps, upgrade the escrow |
+| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | **lower** `maxPenaltyBps` / tune `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter | move principal, change penalty destinations, **raise** `maxPenaltyBps`, raise an existing position's cap, bypass the clamps, upgrade the escrow |
 | **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
 | **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
 
@@ -25,8 +25,8 @@ transferable) whose powers are clamped by constants.
 - All principal is in `VotingEscrow`, which has no upgrade path, no owner and no `selfdestruct`.
 - The only functions that move principal out are `withdraw` (owner, after expiry) and
   `emergencyExit` (owner, before expiry, at the immutable formula). Both are gated by a
-  governance-tunable `withdrawalCooldown` (default 24h, max 7d); early-exit penalty is
-  snapshotted at request. Both read only escrow storage and make no external call except the
+  governance-tunable `withdrawalCooldown` (default 24h, max 7d); early-exit penalty and
+  `readyAt` are snapshotted at request. Both read only escrow storage and make no external call except the
   token transfers themselves on finalize.
 - Penalty destinations are `immutable`. Penalty parameters are clamped by `constant`s.
 - A paused or maliciously upgraded distributor cannot reach principal

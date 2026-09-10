@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {VotingEscrow} from "../../src/VotingEscrow.sol";
 import {Base} from "../Base.t.sol";
 
 contract PenaltyFuzzTest is Base {
@@ -13,7 +14,7 @@ contract PenaltyFuzzTest is Base {
         uint16 globalCap
     ) public {
         amount = uint128(bound(amount, 1 ether, 1_000_000 ether));
-        uint256 cap = bound(globalCap, 0, 5000);
+        uint256 cap = bound(globalCap, 0, escrow.maxPenaltyBps());
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(cap);
 
@@ -29,10 +30,10 @@ contract PenaltyFuzzTest is Base {
         assertEq(returned + penalty, amount, "principal is fully accounted for");
     }
 
-    /// @dev Governance can never raise an existing position's effective cap.
+    /// @dev Governance can never raise the global cap, so existing effective caps only improve.
     function testFuzz_governanceCannotWorsenAnExistingPosition(uint16 capAtLock, uint16 capLater) public {
-        uint256 first = bound(capAtLock, 0, 5000);
-        uint256 second = bound(capLater, 0, 5000);
+        uint256 first = bound(capAtLock, 0, escrow.maxPenaltyBps());
+        uint256 second = bound(capLater, 0, first);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(first);
@@ -45,8 +46,23 @@ contract PenaltyFuzzTest is Base {
         assertLe(escrow.effectivePenaltyCapBps(tokenId), effectiveBefore, "an existing cap can only improve");
     }
 
-    /// @dev The weighted `increase_amount` rule: the new cap always sits between the old cap and
-    ///      the current global, and old principal never enters worse terms than it had.
+    /// @dev Raise attempts always revert once the global is below the attempted value.
+    function testFuzz_governanceCannotRaiseMaxPenaltyBps(uint16 lowerTo, uint16 attemptRaise) public {
+        uint256 current = escrow.maxPenaltyBps();
+        if (current == 0) {
+            return;
+        }
+        uint256 lowered = bound(lowerTo, 0, current - 1);
+        vm.prank(timelock);
+        escrow.setMaxPenaltyBps(lowered);
+
+        uint256 raiseTo = bound(attemptRaise, lowered + 1, current);
+        vm.prank(timelock);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setMaxPenaltyBps(raiseTo);
+    }
+
+    /// @dev The weighted `increase_amount` rule under a non-increasing global.
     function testFuzz_increaseAmountReweightsCapWithinBounds(
         uint128 principal,
         uint128 added,
@@ -55,8 +71,8 @@ contract PenaltyFuzzTest is Base {
     ) public {
         principal = uint128(bound(principal, 1 ether, 1_000_000 ether));
         added = uint128(bound(added, 1 ether, 1_000_000 ether));
-        uint256 oldCap = bound(capAtLock, 0, 5000);
-        uint256 newGlobal = bound(capLater, 0, 5000);
+        uint256 oldCap = bound(capAtLock, 0, escrow.maxPenaltyBps());
+        uint256 newGlobal = bound(capLater, 0, oldCap);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(oldCap);
@@ -71,24 +87,24 @@ contract PenaltyFuzzTest is Base {
         vm.stopPrank();
 
         uint256 resulting = escrow.locked(tokenId).penaltyCapBps;
-        uint256 lo = oldCap < newGlobal ? oldCap : newGlobal;
-        uint256 hi = oldCap < newGlobal ? newGlobal : oldCap;
-        assertGe(resulting, lo == 0 ? 0 : lo - 1, "never below the cheaper of the two");
-        assertLe(resulting, hi, "never above the dearer of the two");
+        assertGe(resulting, newGlobal == 0 ? 0 : newGlobal - 1, "never below the cheaper of the two");
+        assertLe(resulting, oldCap, "never above the dearer of the two");
 
         uint256 expected = (uint256(principal) * oldCap + uint256(added) * newGlobal) / (uint256(principal) + added);
         assertEq(resulting, expected, "exact weighted average");
+        assertEq(escrow.effectivePenaltyCapBps(tokenId), resulting < newGlobal ? resulting : newGlobal);
     }
 
     /// @dev Extensions never change the cap, at any parameter setting.
     function testFuzz_extensionsNeverChangeTheCap(uint16 capAtLock, uint16 capLater, uint16 weeksToLock) public {
+        uint256 first = bound(capAtLock, 0, escrow.maxPenaltyBps());
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(bound(capAtLock, 0, 5000));
+        escrow.setMaxPenaltyBps(first);
         uint256 tokenId = _lock(alice, 1000 ether, bound(weeksToLock, 1, 50) * WEEK);
         uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
 
         vm.prank(timelock);
-        escrow.setMaxPenaltyBps(bound(capLater, 0, 5000));
+        escrow.setMaxPenaltyBps(bound(capLater, 0, first));
 
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);

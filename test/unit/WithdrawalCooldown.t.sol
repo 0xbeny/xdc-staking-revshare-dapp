@@ -35,20 +35,43 @@ contract WithdrawalCooldownTest is Base {
         vm.prank(alice);
         escrow.withdraw(tokenId); // arms request, does not pay yet
         assertEq(wxdc.balanceOf(alice), 100_000_000 ether - 100 ether, "no payout on first call");
-        (uint64 requestedAt, VotingEscrow.ExitKind kind,,,) = _exitRequest(tokenId);
+        (uint64 readyAt, VotingEscrow.ExitKind kind,,,) = _exitRequest(tokenId);
         assertEq(uint8(kind), uint8(VotingEscrow.ExitKind.Withdraw));
-        assertGt(requestedAt, 0);
+        assertEq(readyAt, block.timestamp + 1 days);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(VotingEscrow.CooldownActive.selector, uint256(requestedAt) + 1 days));
+        vm.expectRevert(abi.encodeWithSelector(VotingEscrow.CooldownActive.selector, uint256(readyAt)));
         escrow.withdraw(tokenId);
 
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(readyAt);
         uint256 before = wxdc.balanceOf(alice);
         vm.prank(alice);
         escrow.withdraw(tokenId);
         assertEq(wxdc.balanceOf(alice) - before, 100 ether);
         assertTrue(escrow.closed(tokenId));
+    }
+
+    function test_readyAtIsSnapshottedAgainstLaterCooldownChanges() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+        vm.warp(escrow.locked(tokenId).end);
+
+        vm.prank(alice);
+        escrow.requestWithdraw(tokenId);
+        (uint64 readyAt,,,,) = _exitRequest(tokenId);
+        assertEq(readyAt, block.timestamp + 1 days);
+
+        // Governance lengthens the cooldown mid-flight — pending request is unaffected.
+        vm.prank(timelock);
+        escrow.setWithdrawalCooldown(7 days);
+
+        (uint64 readyAtAfter,,,,) = _exitRequest(tokenId);
+        assertEq(readyAtAfter, readyAt, "pending readyAt is immutable");
+
+        vm.warp(readyAt);
+        uint256 before = wxdc.balanceOf(alice);
+        vm.prank(alice);
+        escrow.withdraw(tokenId);
+        assertEq(wxdc.balanceOf(alice) - before, 100 ether);
     }
 
     function test_emergencyExitSnapshotsPenaltyAtRequest() public {
@@ -103,10 +126,10 @@ contract WithdrawalCooldownTest is Base {
     function _exitRequest(uint256 tokenId)
         internal
         view
-        returns (uint64 requestedAt, VotingEscrow.ExitKind kind, uint128 returned, uint128 toLockers, uint128 toTreasury)
+        returns (uint64 readyAt, VotingEscrow.ExitKind kind, uint128 returned, uint128 toLockers, uint128 toTreasury)
     {
         uint64 penaltyBps;
-        (requestedAt, kind, returned, toLockers, toTreasury, penaltyBps) = escrow.exitRequest(tokenId);
+        (readyAt, kind, returned, toLockers, toTreasury, penaltyBps) = escrow.exitRequest(tokenId);
         penaltyBps; // silence
     }
 }

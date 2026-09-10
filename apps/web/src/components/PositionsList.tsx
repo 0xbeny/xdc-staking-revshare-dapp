@@ -28,7 +28,7 @@ type LockTuple = {
 };
 
 type ExitTuple = {
-  requestedAt: bigint | number;
+  readyAt: bigint | number;
   kind: number;
   returned: bigint;
   toLockers: bigint;
@@ -60,13 +60,6 @@ export function PositionsList() {
     functionName: "tokensOfOwner",
     args: address ? [address] : undefined,
     query: { enabled: ready && !!address },
-  });
-
-  const { data: cooldown } = useReadContract({
-    address: state.deployment.votingEscrow,
-    abi: abis.VotingEscrow,
-    functionName: "withdrawalCooldown",
-    query: { enabled: ready },
   });
 
   const ids = useMemo(() => {
@@ -138,8 +131,6 @@ export function PositionsList() {
     );
   }
 
-  const cooldownSec = cooldown !== undefined ? Number(cooldown) : 0;
-
   return (
     <ul className={styles.list}>
       {ids.map((tokenId, index) => {
@@ -151,8 +142,7 @@ export function PositionsList() {
         const idStr = tokenId.toString();
         const isOpen = expanded === idStr;
         const exitKind = exit ? Number(exit.kind) : ExitKind.None;
-        const requestedAt = exit ? Number(exit.requestedAt) : 0;
-        const readyAt = requestedAt > 0 ? requestedAt + cooldownSec : 0;
+        const readyAt = exit ? Number(exit.readyAt) : 0;
         const unlock = lock ? Number(lock.end) : 0;
         const amount = lock?.amount ?? 0n;
 

@@ -216,6 +216,19 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "bootstrapAdmin",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "cancelExitRequest",
     "inputs": [
       {
@@ -451,7 +464,7 @@ export const VotingEscrowAbi = [
     ],
     "outputs": [
       {
-        "name": "requestedAt",
+        "name": "readyAt",
         "type": "uint64",
         "internalType": "uint64"
       },

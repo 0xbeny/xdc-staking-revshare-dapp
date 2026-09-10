@@ -230,7 +230,8 @@ If `remaining > 0`, call again.
 ## 5. Exit
 
 Production: `withdrawalCooldown = 1 days` (timelock-tunable, max 7 days). Both mature and
-emergency exits are **request → wait → finalize**.
+emergency exits are **request → wait → finalize**. The request snapshots an immutable
+`readyAt`; later cooldown changes do not move pending requests.
 
 ### 5.1 Mature withdraw (full principal)
 
@@ -401,7 +402,7 @@ Anyone → pull.skim(USDC)  // or zodiac.skim(USDC)
 ```text
 Timelock → access.grantRole(attestor, REPORTER, reporter)
 Reporter: USDC.approve(attestor, …)
-Reporter → attestor.postRevenue(dapp, USDC, closedSourceEpoch, gross, 0, hash)
+Reporter → attestor.postRevenue(USDC, closedSourceEpoch, gross, 0, hash)
 ```
 
 ### 10.5 Hermes week

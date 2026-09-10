@@ -105,9 +105,8 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
 
   const exitKind = exit ? Number(exit[1]) : ExitKind.None;
   const exitPending = exitKind !== ExitKind.None;
-  const requestedAt = exit ? Number(exit[0]) : 0;
+  const readyAt = exit ? Number(exit[0]) : 0;
   const cooldownSec = cooldown !== undefined ? Number(cooldown) : 0;
-  const readyAt = requestedAt > 0 ? requestedAt + cooldownSec : 0;
   const cooldownDone = readyAt > 0 && Date.now() / 1000 >= readyAt;
   const unlockEnd = lock ? Number(lock.end) : 0;
   const matured = unlockEnd > 0 && Date.now() / 1000 >= unlockEnd;

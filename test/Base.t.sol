@@ -118,7 +118,7 @@ abstract contract Base is Test {
         pusher = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, tokens);
         puller = new PullAdapter(dapp, address(distributor), dappTreasury, 2500, tokens, address(feeSafe));
         zodiac = new ZodiacFeeModule(dapp, address(distributor), dappTreasury, 2500, tokens, address(feeSafeB3));
-        attestor = new Attestor(address(distributor), address(access));
+        attestor = new Attestor(address(distributor), address(access), dapp);
 
         feeSafe.approveToken(address(wxdc), address(puller), type(uint256).max);
         feeSafe.approveToken(address(usdc), address(puller), type(uint256).max);

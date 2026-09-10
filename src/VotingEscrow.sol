@@ -94,7 +94,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     struct ExitRequest {
-        uint64 requestedAt;
+        /// @notice Immutable finalize deadline snapshotted at request. Governance cooldown changes
+        ///         only affect subsequent requests.
+        uint64 readyAt;
         ExitKind kind;
         uint128 returned;
         uint128 toLockers;
@@ -119,6 +121,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Only the timelock may touch clamped parameters or the eligibility whitelist.
     address public timelock;
     address public pendingTimelock;
+
+    /// @notice Deployer allowed to call `setDepositor` once. Cleared after wiring.
+    address public bootstrapAdmin;
 
     /// @notice Sole contract allowed to mint locks (`ZapDepositor`). One-shot after deploy.
     address public depositor;
@@ -260,6 +265,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         distributor = distributor_;
         treasury = treasury_;
         timelock = timelock_;
+        bootstrapAdmin = _msgSender();
         maxPenaltyBps = maxPenaltyBps_;
         penaltySplitBps = penaltySplitBps_;
         withdrawalCooldown = 1 days;
@@ -284,8 +290,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Penalty parameters live here, behind immutable clamps (spec §3.1 #11).
     ///         There is no PenaltyManager and `emergencyExit` makes no external call for them.
+    /// @dev Monotonically non-increasing: governance may lower the global cap but never raise it.
+    ///      That keeps grandfathering exact without per-tranche accounting.
     function setMaxPenaltyBps(uint256 newValue) external onlyTimelock {
-        if (newValue > HARD_MAX_PENALTY_BPS) {
+        if (newValue > maxPenaltyBps || newValue > HARD_MAX_PENALTY_BPS) {
             revert ParameterOutOfRange();
         }
         uint256 oldValue = maxPenaltyBps;
@@ -322,17 +330,20 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @notice Wires the sole lock-minting contract (`ZapDepositor`). One-shot; called at deploy.
-    /// @dev Until this is set, no locks can be minted. Intentionally not timelock-gated so the
-    ///      deployer can complete wiring in the same broadcast as construction; afterwards it
-    ///      cannot be changed (same posture as `FeeDistributor.setEscrow`).
+    /// @dev Restricted to `bootstrapAdmin` (the deployer) so a stranger cannot front-run the
+    ///      wiring tx and permanently brick the immutable escrow. Cleared after success.
     function setDepositor(address depositor_) external {
-        if (depositor_ == address(0)) {
-            revert ZeroAddress();
-        }
         if (depositor != address(0)) {
             revert DepositorAlreadySet();
         }
+        if (_msgSender() != bootstrapAdmin) {
+            revert NotAuthorized();
+        }
+        if (depositor_ == address(0)) {
+            revert ZeroAddress();
+        }
         depositor = depositor_;
+        bootstrapAdmin = address(0);
         emit DepositorSet(depositor_);
     }
 
@@ -815,9 +826,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert ExitPending();
         }
 
-        exitRequest[tokenId] =
-            ExitRequest({requestedAt: block.timestamp.toUint64(), kind: ExitKind.Withdraw, returned: 0, toLockers: 0, toTreasury: 0, penaltyBps: 0});
-        emit ExitRequested(tokenId, ExitKind.Withdraw, block.timestamp + withdrawalCooldown);
+        uint64 readyAt = _readyAtFromNow();
+        exitRequest[tokenId] = ExitRequest({
+            readyAt: readyAt, kind: ExitKind.Withdraw, returned: 0, toLockers: 0, toTreasury: 0, penaltyBps: 0
+        });
+        emit ExitRequested(tokenId, ExitKind.Withdraw, readyAt);
     }
 
     /// @notice Starts an early exit. Penalty is snapshotted now; funds move after cooldown via `emergencyExit`.
@@ -834,15 +847,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
 
         ExitQuote memory q = _quoteExit(lock);
+        uint64 readyAt = _readyAtFromNow();
         exitRequest[tokenId] = ExitRequest({
-            requestedAt: block.timestamp.toUint64(),
+            readyAt: readyAt,
             kind: ExitKind.Emergency,
             returned: q.returned.toUint128(),
             toLockers: q.toLockers.toUint128(),
             toTreasury: q.toTreasury.toUint128(),
             penaltyBps: q.penaltyBps.toUint64()
         });
-        emit ExitRequested(tokenId, ExitKind.Emergency, block.timestamp + withdrawalCooldown);
+        emit ExitRequested(tokenId, ExitKind.Emergency, readyAt);
     }
 
     /// @notice Cancels a pending exit request. Lock terms are unchanged.
@@ -859,7 +873,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @notice Mature withdraw. First call (or explicit `requestWithdraw`) arms the exit; after
-    ///         `withdrawalCooldown` a subsequent call (or the same call when cooldown is 0) pays out.
+    ///         the snapshotted `readyAt` a subsequent call (or the same call when cooldown is 0) pays out.
     function withdraw(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
@@ -871,15 +885,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             if (lock.end > block.timestamp) {
                 revert LockNotExpired();
             }
+            uint64 readyAt = _readyAtFromNow();
             exitRequest[tokenId] = ExitRequest({
-                requestedAt: block.timestamp.toUint64(),
-                kind: ExitKind.Withdraw,
-                returned: 0,
-                toLockers: 0,
-                toTreasury: 0,
-                penaltyBps: 0
+                readyAt: readyAt, kind: ExitKind.Withdraw, returned: 0, toLockers: 0, toTreasury: 0, penaltyBps: 0
             });
-            emit ExitRequested(tokenId, ExitKind.Withdraw, block.timestamp + withdrawalCooldown);
+            emit ExitRequested(tokenId, ExitKind.Withdraw, readyAt);
             if (withdrawalCooldown != 0) {
                 return;
             }
@@ -888,7 +898,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert WrongExitKind();
         }
 
-        _requireCooldownElapsed(req.requestedAt);
+        _requireCooldownElapsed(req.readyAt);
 
         uint256 amount = lock.amount;
         delete exitRequest[tokenId];
@@ -901,7 +911,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @notice Early exit. First call snapshots the penalty and arms the cooldown; after
-    ///         `withdrawalCooldown` a subsequent call (or the same call when cooldown is 0) pays out.
+    ///         the snapshotted `readyAt` a subsequent call (or the same call when cooldown is 0) pays out.
     function emergencyExit(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
@@ -914,15 +924,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
                 revert LockNotExpired();
             }
             ExitQuote memory q = _quoteExit(lock);
+            uint64 readyAt = _readyAtFromNow();
             exitRequest[tokenId] = ExitRequest({
-                requestedAt: block.timestamp.toUint64(),
+                readyAt: readyAt,
                 kind: ExitKind.Emergency,
                 returned: q.returned.toUint128(),
                 toLockers: q.toLockers.toUint128(),
                 toTreasury: q.toTreasury.toUint128(),
                 penaltyBps: q.penaltyBps.toUint64()
             });
-            emit ExitRequested(tokenId, ExitKind.Emergency, block.timestamp + withdrawalCooldown);
+            emit ExitRequested(tokenId, ExitKind.Emergency, readyAt);
             if (withdrawalCooldown != 0) {
                 return;
             }
@@ -931,7 +942,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert WrongExitKind();
         }
 
-        _requireCooldownElapsed(req.requestedAt);
+        _requireCooldownElapsed(req.readyAt);
 
         uint256 returned = req.returned;
         uint256 toLockers = req.toLockers;
@@ -959,8 +970,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         emit EmergencyExit(tokenId, owner, returned, penalty, toLockers, toTreasury, penaltyBps);
     }
 
-    function _requireCooldownElapsed(uint64 requestedAt) private view {
-        uint256 readyAt = uint256(requestedAt) + withdrawalCooldown;
+    function _readyAtFromNow() private view returns (uint64) {
+        return (block.timestamp + withdrawalCooldown).toUint64();
+    }
+
+    function _requireCooldownElapsed(uint64 readyAt) private view {
         if (block.timestamp < readyAt) {
             revert CooldownActive(readyAt);
         }
