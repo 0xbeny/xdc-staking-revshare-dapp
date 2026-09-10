@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,9 +12,29 @@ const walletConnectEntry = path.join(
   "dist/esm/walletConnect.js",
 );
 
+function resolveGitSha(): string {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA || process.env.NEXT_PUBLIC_GIT_SHA;
+  if (fromEnv) return fromEnv.trim();
+  try {
+    return execSync("git rev-parse HEAD", {
+      cwd: path.join(root, "../.."),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+const gitSha = resolveGitSha();
+process.env.NEXT_PUBLIC_GIT_SHA = gitSha;
+
 const nextConfig: NextConfig = {
   transpilePackages: ["@vexdc/contracts"],
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_GIT_SHA: gitSha,
+  },
   webpack: (config) => {
     config.resolve.alias = {
       ...config.resolve.alias,

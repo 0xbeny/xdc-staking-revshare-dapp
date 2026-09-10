@@ -1,0 +1,36 @@
+.footer {
+  height: var(--footer-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1rem;
+  border-top: 1px solid var(--border);
+  background: rgba(8, 9, 12, 0.55);
+}
+
+.row {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+.dot {
+  color: var(--ink-faint);
+}
+
+.link {
+  color: var(--ink-muted);
+  padding: 0.25rem 0;
+}
+
+.link:hover {
+  color: var(--teal-300);
+}
