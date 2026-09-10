@@ -5,11 +5,15 @@
   "crons": [
     {
       "path": "/api/sync",
-      "schedule": "0 0 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/keeper",
-      "schedule": "0 12 * * *"
+      "schedule": "0 22 * * 3"
+    },
+    {
+      "path": "/api/keeper",
+      "schedule": "5 0 * * 4"
     }
   ]
 }

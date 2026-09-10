@@ -8,8 +8,9 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { contractsReady, getContractsState } from "@/lib/contracts";
+import { contractsReady, getConfiguredChainId, getContractsState } from "@/lib/contracts";
 import { txErrorMessage } from "@/lib/format";
+import { useCorrectChain } from "@/lib/useCorrectChain";
 import styles from "./ClaimButton.module.css";
 
 type Props = {
@@ -20,6 +21,7 @@ type Props = {
 export function ClaimButton({ tokenId, mode = "claim" }: Props) {
   const state = getContractsState();
   const ready = contractsReady(state);
+  const { onExpectedChain } = useCorrectChain();
   const { data: rewardTokens } = useReadContract({
     address: state.deployment.feeDistributor,
     abi: abis.FeeDistributor,
@@ -42,6 +44,7 @@ export function ClaimButton({ tokenId, mode = "claim" }: Props) {
   } = useWaitForTransactionReceipt({ hash });
 
   const busy = isPending || confirming;
+  const canWrite = ready && onExpectedChain && !busy;
   const label =
     mode === "claimAndLock"
       ? busy
@@ -56,15 +59,18 @@ export function ClaimButton({ tokenId, mode = "claim" }: Props) {
       <button
         type="button"
         className={`${styles.btn} ${mode === "claimAndLock" ? styles.lock : styles.claim}`}
-        disabled={!ready || busy}
+        disabled={!canWrite}
         onClick={() => {
+          if (!onExpectedChain) return;
           reset();
+          const chainId = getConfiguredChainId();
           if (mode === "claimAndLock") {
             writeContract({
               address: state.deployment.feeDistributor,
               abi: abis.FeeDistributor,
               functionName: "claimAndLock",
               args: [tokenId],
+              chainId,
             });
             return;
           }
@@ -73,6 +79,7 @@ export function ClaimButton({ tokenId, mode = "claim" }: Props) {
             abi: abis.FeeDistributor,
             functionName: "claim",
             args: [tokenId, tokens],
+            chainId,
           });
         }}
       >

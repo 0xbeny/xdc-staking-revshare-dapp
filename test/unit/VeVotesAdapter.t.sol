@@ -34,6 +34,17 @@ contract VeVotesAdapterTest is Base {
         assertEq(votes.getPastTotalSupply(t0), escrow.totalSupplyAt(t0));
     }
 
+    function test_pastVotesRejectFutureAndCurrentTimepoints() public {
+        _lock(alice, 100_000 ether, 52 weeks);
+        uint48 nowTs = votes.clock();
+
+        vm.expectRevert(abi.encodeWithSelector(VeVotesAdapter.ERC5805FutureLookup.selector, uint256(nowTs), nowTs));
+        votes.getPastVotes(alice, nowTs);
+
+        vm.expectRevert(abi.encodeWithSelector(VeVotesAdapter.ERC5805FutureLookup.selector, uint256(nowTs) + 1, nowTs));
+        votes.getPastTotalSupply(uint256(nowTs) + 1);
+    }
+
     function test_clockIsTimestampBased() public view {
         assertEq(votes.clock(), uint48(block.timestamp));
         assertEq(votes.CLOCK_MODE(), "mode=timestamp");

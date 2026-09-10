@@ -18,9 +18,11 @@ interface IVotingEscrow {
     function token() external view returns (address);
     function distributor() external view returns (address);
     function treasury() external view returns (address);
+    function acceptsLockGifts(address account) external view returns (bool);
 
     function MAX_LOCK() external view returns (uint256);
     function MIN_LOCK() external view returns (uint256);
+    function MIN_LOCK_AMOUNT() external view returns (uint256);
     function HARD_MAX_PENALTY_BPS() external view returns (uint256);
 
     function maxPenaltyBps() external view returns (uint256);

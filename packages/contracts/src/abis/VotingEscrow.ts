@@ -116,6 +116,19 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "MIN_LOCK_AMOUNT",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "WEEK",
     "inputs": [],
     "outputs": [
@@ -133,6 +146,25 @@ export const VotingEscrowAbi = [
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "acceptsLockGifts",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -930,6 +962,19 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "setAcceptsLockGifts",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setApprovalForAll",
     "inputs": [
       {
@@ -1398,6 +1443,25 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "event",
+    "name": "AcceptsLockGiftsSet",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Approval",
     "inputs": [
       {
@@ -1846,6 +1910,11 @@ export const VotingEscrowAbi = [
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AmountBelowMinimum",
+    "inputs": []
   },
   {
     "type": "error",

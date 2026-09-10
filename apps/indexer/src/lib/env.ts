@@ -16,6 +16,8 @@ const envSchema = z.object({
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional()
     .or(z.literal("").transform(() => undefined)),
+  KEEPER_BATCH_SIZE: z.coerce.number().int().positive().optional(),
+  SYNC_CONFIRMATIONS: z.coerce.number().int().nonnegative().optional(),
   FEE_SPLITTER: addressSchema,
   REWARD_TOKENS: z.string().optional(),
   CORS_ORIGIN: z.string().optional(),

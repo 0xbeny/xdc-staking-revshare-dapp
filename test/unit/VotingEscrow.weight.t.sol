@@ -149,11 +149,15 @@ contract VotingEscrowWeightTest is Base {
         assertEq(escrow.totalSupply(), 0);
     }
 
-    function test_dustAmountBelowMaxLockHasZeroWeight() public {
-        // MAX_LOCK is ~6.29e7 seconds; anything below that truncates to a zero slope.
-        uint256 tokenId = _lock(alice, MAX_LOCK - 1, MAX_LOCK);
-        assertEq(escrow.balanceOfNFT(tokenId), 0);
-        assertEq(escrow.totalSupply(), 0);
+    function test_minLockAmountPreventsSubSlopeDustMints() public {
+        // MAX_LOCK (~6.29e7) is far below MIN_LOCK_AMOUNT (1e18), so the old "zero slope dust
+        // lock" path is unreachable on-chain — createLockFor rejects it first.
+        assertGt(escrow.MIN_LOCK_AMOUNT(), MAX_LOCK);
+        vm.startPrank(alice);
+        wxdc.approve(address(zap), MAX_LOCK - 1);
+        vm.expectRevert(VotingEscrow.AmountBelowMinimum.selector);
+        zap.lockWXDC(MAX_LOCK - 1, MAX_LOCK);
+        vm.stopPrank();
     }
 
     /// @dev The pure formula, exercised directly: truncated slope, clamp, expiry, dust.

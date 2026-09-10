@@ -35,6 +35,7 @@ contract ZapDepositor is Context {
     error ZeroAmount();
     error EscrowTokenMismatch();
     error NotPositionOwner();
+    error GiftsNotAccepted();
 
     constructor(address wxdc_, address escrow_) {
         if (wxdc_ == address(0) || escrow_ == address(0)) {
@@ -56,11 +57,12 @@ contract ZapDepositor is Context {
     }
 
     /// @notice Wraps `msg.value` and creates a lock owned by `beneficiary`, funded by the caller.
-    /// @dev For custodial and gift flows. The escrow checks eligibility against `beneficiary`.
+    /// @dev Gift / custodial path. Requires `beneficiary == caller` or prior `setAcceptsLockGifts(true)`.
     function zapCreateLockFor(address beneficiary, uint256 duration) external payable returns (uint256 tokenId) {
         if (beneficiary == address(0)) {
             revert ZeroAddress();
         }
+        _requireGiftAllowed(beneficiary);
         return _zapCreateLock(beneficiary, duration);
     }
 
@@ -70,10 +72,12 @@ contract ZapDepositor is Context {
     }
 
     /// @notice Pulls WXDC from the caller and creates a lock owned by `beneficiary`.
+    /// @dev Gift / custodial path. Requires `beneficiary == caller` or prior `setAcceptsLockGifts(true)`.
     function lockWXDCFor(address beneficiary, uint256 amount, uint256 duration) external returns (uint256 tokenId) {
         if (beneficiary == address(0)) {
             revert ZeroAddress();
         }
+        _requireGiftAllowed(beneficiary);
         return _lockWXDC(beneficiary, amount, duration);
     }
 
@@ -121,5 +125,14 @@ contract ZapDepositor is Context {
         IERC20(address(WXDC)).safeTransferFrom(_msgSender(), address(this), amount);
         tokenId = ESCROW.createLockFor(beneficiary, amount, duration);
         emit Zapped(_msgSender(), beneficiary, tokenId, amount, duration);
+    }
+
+    function _requireGiftAllowed(address beneficiary) private view {
+        if (beneficiary == _msgSender()) {
+            return;
+        }
+        if (!ESCROW.acceptsLockGifts(beneficiary)) {
+            revert GiftsNotAccepted();
+        }
     }
 }

@@ -10,7 +10,7 @@ async function handle(request: Request) {
 
   try {
     const result = await runKeeper();
-    return Response.json(result);
+    return Response.json(result, { status: result.ok ? 200 : 503 });
   } catch (err) {
     return Response.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

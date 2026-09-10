@@ -9,16 +9,19 @@ import {
 } from "wagmi";
 import {
   contractsReady,
+  getConfiguredChainId,
   getContractsState,
   MAX_LOCK_WEEKS,
   MIN_LOCK_WEEKS,
   weeksToDuration,
 } from "@/lib/contracts";
 import { formatDate, parseXdcInput, txErrorMessage, weightHint } from "@/lib/format";
+import { useCorrectChain } from "@/lib/useCorrectChain";
 import styles from "./DepositForm.module.css";
 
 export function DepositForm() {
   const { address, isConnected } = useAccount();
+  const { onExpectedChain, expectedChainId } = useCorrectChain();
   const state = getContractsState();
   const ready = contractsReady(state);
   const [amount, setAmount] = useState("1000");
@@ -41,11 +44,19 @@ export function DepositForm() {
   }, [isSuccess]);
 
   const disabled =
-    !ready || !isConnected || !address || value === null || value === 0n || isPending || confirming;
+    !ready ||
+    !isConnected ||
+    !onExpectedChain ||
+    !address ||
+    value === null ||
+    value === 0n ||
+    isPending ||
+    confirming;
 
   const status = (() => {
     if (!ready) return "Contracts not deployed — deposits disabled.";
     if (!isConnected) return "Connect a wallet to deposit.";
+    if (!onExpectedChain) return `Switch wallet to chain ${expectedChainId} before depositing.`;
     if (error) return txErrorMessage(error);
     if (receiptError) return txErrorMessage(receiptError);
     if (isPending) return "Confirm in your wallet…";
@@ -118,13 +129,14 @@ export function DepositForm() {
           className={styles.submit}
           disabled={disabled}
           onClick={() => {
-            if (value === null || value === 0n) return;
+            if (value === null || value === 0n || !onExpectedChain) return;
             writeContract({
               address: state.deployment.zapDepositor,
               abi: abis.ZapDepositor,
               functionName: "zapCreateLock",
               args: [duration],
               value,
+              chainId: getConfiguredChainId(),
             });
           }}
         >

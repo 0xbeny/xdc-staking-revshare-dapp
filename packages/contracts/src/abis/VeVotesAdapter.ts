@@ -239,6 +239,22 @@ export const VeVotesAdapterAbi = [
   },
   {
     "type": "error",
+    "name": "ERC5805FutureLookup",
+    "inputs": [
+      {
+        "name": "timepoint",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "currentTimepoint",
+        "type": "uint48",
+        "internalType": "uint48"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "SafeCastOverflowedUintDowncast",
     "inputs": [
       {

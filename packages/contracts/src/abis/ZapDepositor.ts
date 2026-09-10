@@ -238,6 +238,11 @@ export const ZapDepositorAbi = [
   },
   {
     "type": "error",
+    "name": "GiftsNotAccepted",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotPositionOwner",
     "inputs": []
   },

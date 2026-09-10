@@ -26,7 +26,7 @@ import {
 } from "@/db";
 import { chunkBlockRange, toBlockString, utcDay } from "@/lib/blocks";
 import { makePublicClient, normalizeAddress } from "@/lib/chain";
-import { getChainId } from "@/lib/env";
+import { getChainId, loadEnv } from "@/lib/env";
 
 export type ContractKey =
   | "votingEscrow"
@@ -344,7 +344,21 @@ async function processVotingEscrowLog(
       });
       break;
     }
-    case "Withdraw":
+    case "Withdraw": {
+      const { tokenId } = decoded.args;
+      // Mature withdraw: weight is already zero after expiry; exitEpoch is not recorded on-chain.
+      await markClosed(db, chainId, tokenId, blockNumber);
+      await insertEvent(db, {
+        chainId,
+        tokenId: tokenId.toString(10),
+        eventName: "Withdraw",
+        txHash,
+        logIndex,
+        blockNumber: toBlockString(blockNumber),
+        payload: jsonSafe(decoded.args),
+      });
+      break;
+    }
     case "EmergencyExit": {
       const { tokenId } = decoded.args;
       const block = await client.getBlock({ blockNumber });
@@ -353,7 +367,7 @@ async function processVotingEscrowLog(
       await insertEvent(db, {
         chainId,
         tokenId: tokenId.toString(10),
-        eventName: decoded.eventName,
+        eventName: "EmergencyExit",
         txHash,
         logIndex,
         blockNumber: toBlockString(blockNumber),
@@ -406,7 +420,7 @@ async function processFeeDistributorLog(
       break;
     }
     case "EpochSettled": {
-      const { token, epoch, supply, pot } = decoded.args;
+      const { token, epoch, supply, pot, movedForward } = decoded.args;
       const tokenNorm = normalizeAddress(token);
       const epochStr = epoch.toString(10);
       await db
@@ -429,20 +443,27 @@ async function processFeeDistributorLog(
             pot: pot.toString(10),
           },
         });
+      if (movedForward > 0n) {
+        await upsertEpochRevenue(db, chainId, token, epoch + 1n, movedForward);
+      }
       break;
     }
     case "Claimed": {
       const { tokenId, token, to, amount, newCursor } = decoded.args;
-      await db.insert(claims).values({
-        chainId,
-        tokenId: tokenId.toString(10),
-        token: normalizeAddress(token),
-        amount: amount.toString(10),
-        to: normalizeAddress(to),
-        claimCursor: newCursor.toString(10),
-        txHash,
-        blockNumber: toBlockString(blockNumber),
-      });
+      await db
+        .insert(claims)
+        .values({
+          chainId,
+          tokenId: tokenId.toString(10),
+          token: normalizeAddress(token),
+          amount: amount.toString(10),
+          to: normalizeAddress(to),
+          claimCursor: newCursor.toString(10),
+          txHash,
+          logIndex,
+          blockNumber: toBlockString(blockNumber),
+        })
+        .onConflictDoNothing();
       await insertEvent(db, {
         chainId,
         tokenId: tokenId.toString(10),
@@ -543,14 +564,34 @@ async function processRevenueRegistryLog(
     }
     case "ContributionRecorded": {
       const { adapter, token, amount } = decoded.args;
-      await db.insert(contributions).values({
-        chainId,
-        adapter: normalizeAddress(adapter),
-        token: normalizeAddress(token),
-        amount: amount.toString(10),
-        blockNumber: toBlockString(blockNumber),
-        txHash,
-      });
+      await db
+        .insert(contributions)
+        .values({
+          chainId,
+          adapter: normalizeAddress(adapter),
+          token: normalizeAddress(token),
+          amount: amount.toString(10),
+          blockNumber: toBlockString(blockNumber),
+          txHash,
+          logIndex,
+        })
+        .onConflictDoNothing();
+      break;
+    }
+    case "TermsUpdated": {
+      const { adapter, termsHash, version } = decoded.args;
+      await db
+        .update(adapters)
+        .set({
+          termsHash,
+          version: Number(version),
+        })
+        .where(
+          and(
+            eq(adapters.chainId, chainId),
+            eq(adapters.adapter, normalizeAddress(adapter)),
+          ),
+        );
       break;
     }
     default:
@@ -610,6 +651,7 @@ const RR_EVENTS = [
   "AdapterDeactivated",
   "AdapterReactivated",
   "ContributionRecorded",
+  "TermsUpdated",
 ] as const;
 
 const ZAP_EVENTS = ["Zapped", "ZapIncreased"] as const;
@@ -748,6 +790,11 @@ export async function runSync(): Promise<SyncResult> {
   const db = getDb();
   const client = makePublicClient(chainId);
   const latest = await client.getBlockNumber();
+  const confirmations = Math.max(
+    0,
+    loadEnv().SYNC_CONFIRMATIONS ?? 12,
+  );
+  const safeTip = latest > BigInt(confirmations) ? latest - BigInt(confirmations) : 0n;
 
   const keys: ContractKey[] = [
     "votingEscrow",
@@ -760,7 +807,7 @@ export async function runSync(): Promise<SyncResult> {
   const advanced: Record<string, string> = {};
 
   for (const key of keys) {
-    const n = await syncContract(db, client, deployment, chainId, key, latest);
+    const n = await syncContract(db, client, deployment, chainId, key, safeTip);
     logsProcessed += n;
     const cursor = await getCursor(db, chainId, key, 0n);
     advanced[key] = cursor.toString(10);

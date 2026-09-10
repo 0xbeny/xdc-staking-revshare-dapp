@@ -11,6 +11,7 @@ import {
 import { ClaimButton } from "@/components/ClaimButton";
 import {
   contractsReady,
+  getConfiguredChainId,
   getContractsState,
   MAX_LOCK_WEEKS,
   MIN_LOCK_WEEKS,
@@ -24,6 +25,7 @@ import {
   txErrorMessage,
   weightHint,
 } from "@/lib/format";
+import { useCorrectChain } from "@/lib/useCorrectChain";
 import styles from "./ManagePosition.module.css";
 
 const ExitKind = {
@@ -39,8 +41,10 @@ type Props = {
 
 export function ManagePosition({ tokenId, compact = false }: Props) {
   const { address, isConnected } = useAccount();
+  const { onExpectedChain, expectedChainId } = useCorrectChain();
   const state = getContractsState();
   const ready = contractsReady(state);
+  const writeChainId = getConfiguredChainId();
   const escrow = state.deployment.votingEscrow;
   const zap = state.deployment.zapDepositor;
 
@@ -112,7 +116,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
   const matured = unlockEnd > 0 && Date.now() / 1000 >= unlockEnd;
   const isClosed = Boolean(closed);
   const busy = isPending || confirming;
-  const writesOk = ready && isConnected && !!address && !isClosed;
+  const writesOk = ready && isConnected && onExpectedChain && !!address && !isClosed;
 
   const increaseValue = useMemo(() => parseXdcInput(increaseAmt), [increaseAmt]);
   const newUnlock = useMemo(() => {
@@ -123,6 +127,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
   const statusMsg = (() => {
     if (!ready) return "Contracts not deployed — writes disabled.";
     if (!isConnected) return "Connect a wallet to manage this position.";
+    if (!onExpectedChain) return `Switch wallet to chain ${expectedChainId} before writing.`;
     if (error) return txErrorMessage(error);
     if (receiptError) return txErrorMessage(receiptError);
     if (isPending) return "Confirm in your wallet…";
@@ -144,6 +149,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
         : styles.status;
 
   function run(fn: () => void) {
+    if (!onExpectedChain) return;
     reset();
     fn();
   }
@@ -199,6 +205,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
               onClick={() =>
                 run(() =>
                   writeContract({
+                    chainId: writeChainId,
                     address: zap,
                     abi: abis.ZapDepositor,
                     functionName: "zapIncreaseAmount",
@@ -238,6 +245,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
               onClick={() =>
                 run(() =>
                   writeContract({
+                    chainId: writeChainId,
                     address: escrow,
                     abi: abis.VotingEscrow,
                     functionName: "increaseUnlockTime",
@@ -255,6 +263,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
               onClick={() =>
                 run(() =>
                   writeContract({
+                    chainId: writeChainId,
                     address: escrow,
                     abi: abis.VotingEscrow,
                     functionName: "keepAtMaxLock",
@@ -303,6 +312,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                     onClick={() =>
                       run(() =>
                         writeContract({
+                          chainId: writeChainId,
                           address: escrow,
                           abi: abis.VotingEscrow,
                           functionName: "withdraw",
@@ -322,6 +332,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                     onClick={() =>
                       run(() =>
                         writeContract({
+                          chainId: writeChainId,
                           address: escrow,
                           abi: abis.VotingEscrow,
                           functionName: "emergencyExit",
@@ -340,6 +351,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                   onClick={() =>
                     run(() =>
                       writeContract({
+                        chainId: writeChainId,
                         address: escrow,
                         abi: abis.VotingEscrow,
                         functionName: "cancelExitRequest",
@@ -362,6 +374,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                 onClick={() =>
                   run(() =>
                     writeContract({
+                      chainId: writeChainId,
                       address: escrow,
                       abi: abis.VotingEscrow,
                       functionName: "requestWithdraw",
@@ -380,6 +393,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                 onClick={() =>
                   run(() =>
                     writeContract({
+                      chainId: writeChainId,
                       address: escrow,
                       abi: abis.VotingEscrow,
                       functionName: "requestEmergencyExit",

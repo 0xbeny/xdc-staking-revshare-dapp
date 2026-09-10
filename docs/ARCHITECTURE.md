@@ -70,16 +70,24 @@ arithmetic lives.
 
 Rules inside `createLockFor`:
 
-1. `duration` must be a whole number of weeks in `[1, 104]`.
-2. `unlock = ceilWeek(now + duration)` — rounds **up**, so the effective lock is never shorter
+1. `amount >= MIN_LOCK_AMOUNT` (1 XDC) — dust mints revert.
+2. `duration` must be a whole number of weeks in `[1, 104]`.
+3. `unlock = ceilWeek(now + duration)` — rounds **up**, so the effective lock is never shorter
    than asked. It can be up to `WEEK - 1` seconds *longer*.
-3. The beneficiary must be an EOA, or a contract with a `CUSTODIAN`/`WRAPPER` tier.
-4. The position records `penaltyCapBps = maxPenaltyBps` at that instant (grandfathering).
-5. It also records `firstEligibleEpoch = epochOf(ceilWeek(now))` — the first epoch whose
+4. The beneficiary must be an EOA, or a contract with a `CUSTODIAN`/`WRAPPER` tier.
+5. The position records `penaltyCapBps = maxPenaltyBps` at that instant (grandfathering).
+6. It also records `firstEligibleEpoch = epochOf(ceilWeek(now))` — the first epoch whose
    start-of-epoch snapshot can contain it.
-6. Principal is credited from the **balance delta** of the escrow token transfer: if
-   `received != amount` the call reverts (`IncompleteTransfer`). This keeps
-   `totalLocked == token.balanceOf(escrow)`.
+7. Principal is credited from the **balance delta** of the escrow token transfer: if
+   `received != amount` the call reverts (`IncompleteTransfer`). Ordinary-path accounting
+   preserves `token.balanceOf(escrow) >= totalLocked` (unsolicited ERC-20 donations can make
+   the absolute equality false without breaking solvency).
+
+**Gift / third-party minting.** `zapCreateLockFor` / `lockWXDCFor` require either
+`beneficiary == funder` or a prior `escrow.setAcceptsLockGifts(true)` from the beneficiary.
+Unsolicited dust positions cannot be appended to a non-consenting account. Closed positions
+are not burned (historical claims), so consent + min amount are the cardinality controls;
+the UI paginates `tokensOfOwner`.
 
 `increaseAmount(tokenId, amount)` remains **permissionless** on the escrow (Curve-style /
 auto-compound). `ZapDepositor.zapIncreaseAmount` / `increaseAmountWXDC` are owner-only
@@ -193,7 +201,8 @@ the fraction and forfeits nothing.
 
 `withdraw` and `emergencyExit` zero the lock and mark the position `closed`, but the NFT stays
 with its owner. Already-finalized epochs remain claimable through the distributor after either
-exit, and the `exitEpoch` recorded on the position caps what an exited position can claim.
+exit. **`exitEpoch` is recorded only for `emergencyExit`** (early exit forfeits the in-progress
+epoch). Mature `withdraw` needs no such marker — weight is already zero after expiry.
 
 ### Operators
 
@@ -294,9 +303,18 @@ never pulls from the distributor.
 
 ## VeVotesAdapter
 
-A read-only `IVotes` over the escrow: `getVotes` sums an owner's positions,
-`getPastVotes` reads checkpointed history, `getPastTotalSupply` reads the global history.
-Delegation reverts rather than silently no-op'ing; v1 weight is always self-held.
+A read-only `IVotes` subset over the escrow:
+
+| Method | Behavior |
+|---|---|
+| `clock` / `CLOCK_MODE` | Timestamp clock (`mode=timestamp`) |
+| `getVotes` | Sum of `balanceOfNFT` over `tokensOfOwner` |
+| `getPastVotes` / `getPastTotalSupply` | Checkpointed history; **revert** if `timepoint >= clock()` (ERC-5805) |
+| `delegate` / `delegateBySig` | Always revert (`DelegationNotSupported`) |
+
+Gas scales with owned-position count. Compatible Governors must use a timestamp clock and must
+not assume delegation. Capacity target: keep per-account open + closed IDs bounded via gift
+opt-in and `MIN_LOCK_AMOUNT`; UI paginates enumeration.
 
 ## Deployment topology
 
@@ -305,3 +323,23 @@ proxy must exist first. `script/VeXDCDeployer.sol` encodes the order — registr
 distributor proxy, escrow, wiring, zap, votes — and the hand-over that grants every role to
 governance and renounces the deployer's. The test harness uses the same library, so the
 topology under test is the topology that ships.
+
+**Broadcast is not atomic.** Foundry `--broadcast` emits one public transaction per call.
+Intermediate states (escrow live, depositor unset; deployer still holding bootstrap roles) are
+observable. Mitigations:
+
+1. `VotingEscrow.setDepositor` is restricted to `bootstrapAdmin` (the deployer) and clears that
+   authority after success — strangers cannot capture the one-shot slot.
+2. Partial deployments are discarded and redeployed; `ContinueApothemDeploy.s.sol` exists only
+   for interrupted admin handovers, not for repairing a captured depositor.
+3. Prefer a private relay / Flashbots-style bundle for mainnet wiring when available.
+
+### Capacity (operational)
+
+| Path | Bound |
+|---|---|
+| Claim epochs per token | `MAX_EPOCHS_PER_CLAIM = 52` |
+| Reward token set | small fixed list at deploy |
+| Keeper batch | `KEEPER_BATCH_SIZE` (default 50) chunked off-chain |
+| Indexer sync tip | `latest - SYNC_CONFIRMATIONS` (default 12) |
+| UI position list | pages of 25 |

@@ -9,11 +9,17 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /// @notice Read-only IVotes view over checkpointed veXDC weight (§3.5).
 /// @dev Delegation does not exist in v1: weight is always self-held, because positions are
 ///      soulbound and per-tokenId. `delegate` reverts rather than silently no-op'ing.
+///
+///      Compatibility profile: timestamp clock; no delegation; `getPastVotes` /
+///      `getPastTotalSupply` revert for `timepoint >= clock()` (ERC-5805). Gas scales with
+///      `tokensOfOwner.length` — keep position cardinality bounded (gift opt-in + min amount).
 contract VeVotesAdapter is IVotes {
     IVotingEscrow public immutable ESCROW;
 
     error DelegationNotSupported();
     error ZeroAddress();
+    /// @dev ERC-5805 future / current lookup rejection.
+    error ERC5805FutureLookup(uint256 timepoint, uint48 currentTimepoint);
 
     constructor(address escrow_) {
         if (escrow_ == address(0)) {
@@ -39,6 +45,7 @@ contract VeVotesAdapter is IVotes {
     }
 
     function getPastVotes(address account, uint256 timepoint) external view returns (uint256 total) {
+        _requirePastTimepoint(timepoint);
         uint256[] memory ids = ESCROW.tokensOfOwner(account);
         for (uint256 i = 0; i < ids.length; ++i) {
             total += ESCROW.balanceOfNFTAt(ids[i], timepoint);
@@ -46,6 +53,7 @@ contract VeVotesAdapter is IVotes {
     }
 
     function getPastTotalSupply(uint256 timepoint) external view returns (uint256) {
+        _requirePastTimepoint(timepoint);
         return ESCROW.totalSupplyAt(timepoint);
     }
 
@@ -59,5 +67,12 @@ contract VeVotesAdapter is IVotes {
 
     function delegateBySig(address, uint256, uint256, uint8, bytes32, bytes32) external pure {
         revert DelegationNotSupported();
+    }
+
+    function _requirePastTimepoint(uint256 timepoint) private view {
+        uint48 current = clock();
+        if (timepoint >= current) {
+            revert ERC5805FutureLookup(timepoint, current);
+        }
     }
 }

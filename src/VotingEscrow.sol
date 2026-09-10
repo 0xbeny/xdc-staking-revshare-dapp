@@ -76,6 +76,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     uint256 public constant MIN_LOCK = 1 weeks;
     uint256 public constant MAX_LOCK = 104 weeks;
     uint256 public constant BPS = Constants.BPS;
+    /// @notice Minimum principal for a new lock. Defense-in-depth against dust-gift enumeration.
+    uint256 public constant MIN_LOCK_AMOUNT = 1 ether;
 
     /// @notice Hard ceiling on the tunable penalty cap. Immutable, unreachable by governance.
     uint256 public constant HARD_MAX_PENALTY_BPS = 5000;
@@ -127,6 +129,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Sole contract allowed to mint locks (`ZapDepositor`). One-shot after deploy.
     address public depositor;
+
+    /// @notice When true, third parties may create locks for this address via the zap gift paths.
+    /// @dev Default false — recipient must opt in before unsolicited positions can be appended.
+    mapping(address account => bool) public acceptsLockGifts;
 
     /// @notice Tunable within [0, HARD_MAX_PENALTY_BPS].
     uint256 public maxPenaltyBps;
@@ -212,6 +218,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     event MaxPenaltyBpsSet(uint256 oldValue, uint256 newValue);
     event PenaltySplitBpsSet(uint256 oldValue, uint256 newValue);
     event TierSet(address indexed account, Tier tier);
+    event AcceptsLockGiftsSet(address indexed account, bool enabled);
     event OperatorSet(address indexed owner, address indexed operator, bool approved);
     event TimelockTransferStarted(address indexed from, address indexed to);
     event TimelockTransferred(address indexed from, address indexed to);
@@ -226,6 +233,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error DepositorAlreadySet();
     error ZeroAddress();
     error ZeroAmount();
+    error AmountBelowMinimum();
     error IncompleteTransfer();
     error DurationNotWeekAligned();
     error DurationOutOfRange();
@@ -327,6 +335,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         tierOf[account] = tier;
         emit TierSet(account, tier);
+    }
+
+    /// @notice Opt in/out of receiving locks funded by a third party via the zap gift paths.
+    /// @dev Self-funded locks (`beneficiary == funder`) never require this flag.
+    function setAcceptsLockGifts(bool enabled) external {
+        acceptsLockGifts[_msgSender()] = enabled;
+        emit AcceptsLockGiftsSet(_msgSender(), enabled);
     }
 
     /// @notice Wires the sole lock-minting contract (`ZapDepositor`). One-shot; called at deploy.
@@ -702,6 +717,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         if (amount == 0) {
             revert ZeroAmount();
+        }
+        if (amount < MIN_LOCK_AMOUNT) {
+            revert AmountBelowMinimum();
         }
         if (duration % WEEK != 0) {
             revert DurationNotWeekAligned();

@@ -67,10 +67,14 @@ export function PositionsList() {
     return [...tokenIds] as bigint[];
   }, [tokenIds]);
 
+  const PAGE = 25;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const visibleIds = useMemo(() => ids.slice(0, visibleCount), [ids, visibleCount]);
+
   const detailContracts = useMemo(() => {
-    if (!ready || ids.length === 0) return [];
+    if (!ready || visibleIds.length === 0) return [];
     const escrow = state.deployment.votingEscrow;
-    return ids.flatMap((tokenId) => [
+    return visibleIds.flatMap((tokenId) => [
       {
         address: escrow,
         abi: abis.VotingEscrow,
@@ -96,7 +100,7 @@ export function PositionsList() {
         args: [tokenId] as const,
       },
     ]);
-  }, [ids, ready, state.deployment.votingEscrow]);
+  }, [visibleIds, ready, state.deployment.votingEscrow]);
 
   const { data: details, isLoading: loadingDetails } = useReadContracts({
     contracts: detailContracts,
@@ -115,7 +119,7 @@ export function PositionsList() {
     );
   }
 
-  if (loadingIds || (ids.length > 0 && loadingDetails && !details)) {
+  if (loadingIds || (visibleIds.length > 0 && loadingDetails && !details)) {
     return <p className={styles.empty}>Loading positions…</p>;
   }
 
@@ -132,8 +136,9 @@ export function PositionsList() {
   }
 
   return (
+    <>
     <ul className={styles.list}>
-      {ids.map((tokenId, index) => {
+      {visibleIds.map((tokenId, index) => {
         const base = index * 4;
         const lock = asLock(details?.[base]?.result);
         const weight = details?.[base + 1]?.result as bigint | undefined;
@@ -192,5 +197,14 @@ export function PositionsList() {
         );
       })}
     </ul>
+    {visibleCount < ids.length && (
+      <p className={styles.empty}>
+        Showing {visibleIds.length} of {ids.length}.{" "}
+        <button type="button" className={styles.link} onClick={() => setVisibleCount((n) => n + PAGE)}>
+          Load more
+        </button>
+      </p>
+    )}
+    </>
   );
 }

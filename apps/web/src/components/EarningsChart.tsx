@@ -12,15 +12,16 @@ import {
 } from "recharts";
 import { formatUnits } from "viem";
 import { fetchPositionEarnings } from "@/lib/indexer";
+import { getContractsState } from "@/lib/contracts";
 import styles from "./EarningsChart.module.css";
 
 type Props = {
   tokenId: string;
 };
 
-function amountToNumber(raw: string): number {
+function amountToNumber(raw: string, decimals: number): number {
   try {
-    const n = Number(formatUnits(BigInt(raw), 18));
+    const n = Number(formatUnits(BigInt(raw), decimals));
     return Number.isFinite(n) ? n : 0;
   } catch {
     const n = Number(raw);
@@ -28,7 +29,13 @@ function amountToNumber(raw: string): number {
   }
 }
 
+function decimalsForToken(token: string, usdc?: string): number {
+  if (usdc && token.toLowerCase() === usdc.toLowerCase()) return 6;
+  return 18;
+}
+
 export function EarningsChart({ tokenId }: Props) {
+  const usdc = getContractsState().deployment.usdc;
   const { data, isLoading, isError } = useQuery({
     queryKey: ["earnings", tokenId],
     queryFn: () => fetchPositionEarnings(tokenId),
@@ -37,7 +44,7 @@ export function EarningsChart({ tokenId }: Props) {
 
   const points = (data ?? []).map((p, i) => ({
     label: p.at ? p.at.slice(0, 10) : (p.txHash?.slice(0, 8) ?? `#${i + 1}`),
-    amount: amountToNumber(p.amount),
+    amount: amountToNumber(p.amount, decimalsForToken(p.token, usdc)),
     token: p.token,
   }));
 

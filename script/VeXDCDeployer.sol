@@ -231,6 +231,15 @@ library VeXDCDeployer {
         if (!access.hasRole(reg, Roles.REGISTRY_ADMIN, c.timelock)) {
             return "timelock lacks registry admin";
         }
+        if (!access.hasRole(dist, Roles.UPGRADER, c.timelock)) {
+            return "timelock lacks distributor upgrader";
+        }
+        if (!access.hasRole(reg, Roles.DEFAULT_ADMIN, c.timelock)) {
+            return "timelock lacks registry default admin";
+        }
+        if (!access.hasRole(reg, Roles.UPGRADER, c.timelock)) {
+            return "timelock lacks registry upgrader";
+        }
 
         bool deployerHoldsSomething = access.hasRole(access.DEFAULT_ADMIN_ROLE(), admin)
             || access.hasRole(dist, Roles.DEFAULT_ADMIN, admin) || access.hasRole(dist, Roles.UPGRADER, admin)

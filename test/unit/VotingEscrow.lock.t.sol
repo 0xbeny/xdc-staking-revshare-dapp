@@ -58,6 +58,8 @@ contract VotingEscrowLockTest is Base {
 
     function test_createLockFor_checksEligibilityOfBeneficiaryNotFunder() public {
         MockCustodian custodian = new MockCustodian();
+        vm.prank(address(custodian));
+        escrow.setAcceptsLockGifts(true);
 
         // A contract with no tier cannot be a beneficiary...
         vm.startPrank(alice);
@@ -83,6 +85,8 @@ contract VotingEscrowLockTest is Base {
         MockNonReceiver bad = new MockNonReceiver();
         vm.prank(timelock);
         escrow.setTier(address(bad), VotingEscrow.Tier.CUSTODIAN);
+        vm.prank(address(bad));
+        escrow.setAcceptsLockGifts(true);
 
         vm.startPrank(alice);
         wxdc.approve(address(zap), 1 ether);
@@ -92,11 +96,22 @@ contract VotingEscrowLockTest is Base {
     }
 
     function test_createLockFor_eoaNeedsNoWhitelist() public {
+        vm.prank(bob);
+        escrow.setAcceptsLockGifts(true);
+
         vm.startPrank(alice);
         wxdc.approve(address(zap), 1 ether);
         uint256 tokenId = zap.lockWXDCFor(bob, 1 ether, 4 weeks);
         vm.stopPrank();
         assertEq(escrow.ownerOf(tokenId), bob);
+    }
+
+    function test_createLock_rejectsDustPrincipal() public {
+        vm.startPrank(alice);
+        wxdc.approve(address(zap), 1);
+        vm.expectRevert(VotingEscrow.AmountBelowMinimum.selector);
+        zap.lockWXDC(1, 4 weeks);
+        vm.stopPrank();
     }
 
     function test_increaseAmount_addsPrincipalAndWeight() public {

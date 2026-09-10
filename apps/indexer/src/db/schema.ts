@@ -75,17 +75,22 @@ export const epochs = pgTable(
   (t) => [primaryKey({ columns: [t.chainId, t.token, t.epoch] })],
 );
 
-export const claims = pgTable("claims", {
-  id: serial("id").primaryKey(),
-  chainId: integer("chain_id").notNull(),
-  tokenId: u256("token_id").notNull(),
-  token: text("token").notNull(),
-  amount: u256("amount").notNull(),
-  to: text("to").notNull(),
-  claimCursor: u256("claim_cursor").notNull(),
-  txHash: text("tx_hash").notNull(),
-  blockNumber: u256("block_number").notNull(),
-});
+export const claims = pgTable(
+  "claims",
+  {
+    id: serial("id").primaryKey(),
+    chainId: integer("chain_id").notNull(),
+    tokenId: u256("token_id").notNull(),
+    token: text("token").notNull(),
+    amount: u256("amount").notNull(),
+    to: text("to").notNull(),
+    claimCursor: u256("claim_cursor").notNull(),
+    txHash: text("tx_hash").notNull(),
+    logIndex: integer("log_index").notNull().default(0),
+    blockNumber: u256("block_number").notNull(),
+  },
+  (t) => [unique("claims_chain_tx_log_uidx").on(t.chainId, t.txHash, t.logIndex)],
+);
 
 export const adapters = pgTable(
   "adapters",
@@ -102,15 +107,20 @@ export const adapters = pgTable(
   (t) => [primaryKey({ columns: [t.chainId, t.adapter] })],
 );
 
-export const contributions = pgTable("contributions", {
-  id: serial("id").primaryKey(),
-  chainId: integer("chain_id").notNull(),
-  adapter: text("adapter").notNull(),
-  token: text("token").notNull(),
-  amount: u256("amount").notNull(),
-  blockNumber: u256("block_number").notNull(),
-  txHash: text("tx_hash").notNull(),
-});
+export const contributions = pgTable(
+  "contributions",
+  {
+    id: serial("id").primaryKey(),
+    chainId: integer("chain_id").notNull(),
+    adapter: text("adapter").notNull(),
+    token: text("token").notNull(),
+    amount: u256("amount").notNull(),
+    blockNumber: u256("block_number").notNull(),
+    txHash: text("tx_hash").notNull(),
+    logIndex: integer("log_index").notNull().default(0),
+  },
+  (t) => [unique("contributions_chain_tx_log_uidx").on(t.chainId, t.txHash, t.logIndex)],
+);
 
 export const protocolStats = pgTable(
   "protocol_stats",

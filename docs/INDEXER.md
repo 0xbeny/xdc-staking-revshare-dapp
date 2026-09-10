@@ -84,4 +84,10 @@ pnpm --filter @vexdc/indexer test
 pnpm --filter @vexdc/indexer typecheck
 ```
 
-Crons live in `apps/indexer/vercel.json`: sync every 5 minutes, keeper every 30 minutes.
+Crons live in `apps/indexer/vercel.json`:
+
+- sync every 5 minutes (`*/5 * * * *`), tip lagged by `SYNC_CONFIRMATIONS` (default 12)
+- keeper Wednesday 22:00 UTC (`0 22 * * 3`) for the pre-boundary keep window
+- keeper Thursday 00:05 UTC (`5 0 * * 4`) for post-boundary compound / skim
+
+Keeper batches are chunked (`KEEPER_BATCH_SIZE`, default 50). Failed required actions return HTTP 503.

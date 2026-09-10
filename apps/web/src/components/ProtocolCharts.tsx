@@ -14,11 +14,12 @@ import {
 } from "recharts";
 import { formatUnits } from "viem";
 import { fetchProtocolRevenue, fetchProtocolTvl } from "@/lib/indexer";
+import { getContractsState } from "@/lib/contracts";
 import styles from "./ProtocolCharts.module.css";
 
-function parseAmount(raw: string): number {
+function parseAmount(raw: string, decimals: number): number {
   try {
-    const n = Number(formatUnits(BigInt(raw), 18));
+    const n = Number(formatUnits(BigInt(raw), decimals));
     return Number.isFinite(n) ? n : 0;
   } catch {
     const n = Number(raw);
@@ -26,7 +27,13 @@ function parseAmount(raw: string): number {
   }
 }
 
+function decimalsForToken(token: string, usdc?: string): number {
+  if (usdc && token.toLowerCase() === usdc.toLowerCase()) return 6;
+  return 18;
+}
+
 export function ProtocolCharts() {
+  const deployment = getContractsState().deployment;
   const tvl = useQuery({
     queryKey: ["protocol-tvl"],
     queryFn: fetchProtocolTvl,
@@ -40,12 +47,12 @@ export function ProtocolCharts() {
 
   const tvlPoints = (tvl.data ?? []).map((p) => ({
     day: p.day,
-    totalLocked: parseAmount(p.totalLocked),
+    totalLocked: parseAmount(p.totalLocked, 18),
   }));
 
   const revenuePoints = (revenue.data ?? []).map((p) => ({
     label: `e${p.epoch}`,
-    revenue: parseAmount(p.revenue),
+    revenue: parseAmount(p.revenue, decimalsForToken(p.token, deployment.usdc)),
     token: p.token,
   }));
 

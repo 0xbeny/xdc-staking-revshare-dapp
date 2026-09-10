@@ -10,16 +10,29 @@ import { makePublicClient, makeWalletClient, normalizeAddress } from "@/lib/chai
 import { getChainId, loadEnv } from "@/lib/env";
 
 const WEEK = 7n * 24n * 60n * 60n;
+const KEEPER_WINDOW = 2n * 60n * 60n;
+const DEFAULT_BATCH_SIZE = 50;
 
 export type KeeperResult = {
-  ok: true;
+  ok: boolean;
   chainId: number;
   message?: string;
-  keepAtMaxLock?: { hash: Hex; count: number };
-  compound?: { hash: Hex; count: number };
+  blockTimestamp?: number;
+  epoch?: string;
+  keepAtMaxLock?: { hashes: Hex[]; count: number };
+  compound?: { hashes: Hex[]; count: number };
   skims?: Array<{ token: Address; hash: Hex }>;
   skipped?: string[];
 };
+
+function chunkIds(ids: bigint[], size: number): bigint[][] {
+  if (ids.length === 0) return [];
+  const out: bigint[][] = [];
+  for (let i = 0; i < ids.length; i += size) {
+    out.push(ids.slice(i, i + size));
+  }
+  return out;
+}
 
 async function optedInTokenIds(
   chainId: number,
@@ -48,10 +61,6 @@ async function optedInTokenIds(
   return [...latest.entries()]
     .filter(([id, enabled]) => enabled && openSet.has(id))
     .map(([id]) => BigInt(id));
-}
-
-function currentEpoch(): bigint {
-  return BigInt(Math.floor(Date.now() / 1000)) / WEEK;
 }
 
 function rewardTokens(deployment: NonNullable<ReturnType<typeof getDeployment>>): Address[] {
@@ -87,46 +96,81 @@ export async function runKeeper(): Promise<KeeperResult> {
     };
   }
 
+  const batchSize = Math.max(
+    1,
+    env.KEEPER_BATCH_SIZE ?? DEFAULT_BATCH_SIZE,
+  );
+
   const privateKey = env.KEEPER_PRIVATE_KEY as Hex;
   const publicClient = makePublicClient(chainId);
   const wallet = makeWalletClient(chainId, privateKey);
-  const epoch = currentEpoch();
+  const latest = await publicClient.getBlock({ blockTag: "latest" });
+  const now = latest.timestamp;
+  const epoch = now / WEEK;
+  const epochEnd = (epoch + 1n) * WEEK;
+  const inKeepWindow = now + KEEPER_WINDOW >= epochEnd;
   const skipped: string[] = [];
-  const result: KeeperResult = { ok: true, chainId, skipped };
+  const result: KeeperResult = {
+    ok: true,
+    chainId,
+    skipped,
+    blockTimestamp: Number(now),
+    epoch: epoch.toString(),
+  };
 
-  const keepIds = await optedInTokenIds(chainId, "KeepAtMaxLockSet");
-  if (keepIds.length > 0) {
-    try {
-      const hash = await wallet.writeContract({
-        address: deployment.feeDistributor,
-        abi: abis.FeeDistributor,
-        functionName: "batchKeepAtMaxLock",
-        args: [keepIds, epoch],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
-      result.keepAtMaxLock = { hash, count: keepIds.length };
-    } catch (err) {
-      skipped.push(
-        `batchKeepAtMaxLock: ${err instanceof Error ? err.message : String(err)}`,
-      );
+  // Pre-boundary extensions: Wednesday 22:00–24:00 UTC for Thursday epochs.
+  if (inKeepWindow) {
+    const keepIds = await optedInTokenIds(chainId, "KeepAtMaxLockSet");
+    if (keepIds.length > 0) {
+      const hashes: Hex[] = [];
+      for (const chunk of chunkIds(keepIds, batchSize)) {
+        try {
+          const hash = await wallet.writeContract({
+            address: deployment.feeDistributor,
+            abi: abis.FeeDistributor,
+            functionName: "batchKeepAtMaxLock",
+            args: [chunk, epoch],
+          });
+          await publicClient.waitForTransactionReceipt({ hash });
+          hashes.push(hash);
+        } catch (err) {
+          skipped.push(
+            `batchKeepAtMaxLock[${chunk.length}]: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+      if (hashes.length > 0) {
+        result.keepAtMaxLock = { hashes, count: keepIds.length };
+      }
     }
+  } else {
+    skipped.push(
+      `batchKeepAtMaxLock: outside window (now=${now} epochEnd=${epochEnd} window=${KEEPER_WINDOW}s)`,
+    );
   }
 
+  // Post-boundary compounds can run any time in the new epoch (not window-gated on-chain).
   const compoundIds = await optedInTokenIds(chainId, "AutoCompoundSet");
   if (compoundIds.length > 0) {
-    try {
-      const hash = await wallet.writeContract({
-        address: deployment.feeDistributor,
-        abi: abis.FeeDistributor,
-        functionName: "batchCompound",
-        args: [compoundIds, epoch],
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
-      result.compound = { hash, count: compoundIds.length };
-    } catch (err) {
-      skipped.push(
-        `batchCompound: ${err instanceof Error ? err.message : String(err)}`,
-      );
+    const hashes: Hex[] = [];
+    for (const chunk of chunkIds(compoundIds, batchSize)) {
+      try {
+        const hash = await wallet.writeContract({
+          address: deployment.feeDistributor,
+          abi: abis.FeeDistributor,
+          functionName: "batchCompound",
+          args: [chunk, epoch],
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        hashes.push(hash);
+      } catch (err) {
+        skipped.push(
+          `batchCompound[${chunk.length}]: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (hashes.length > 0) {
+      result.compound = { hashes, count: compoundIds.length };
     }
   }
 
@@ -153,6 +197,11 @@ export async function runKeeper(): Promise<KeeperResult> {
     if (skims.length > 0) result.skims = skims;
   }
 
+  // Outside the keep window, the keep skip is expected — not a failure.
+  const unexpected = skipped.filter((s) => !s.startsWith("batchKeepAtMaxLock: outside window"));
+  if (unexpected.length > 0) {
+    result.ok = false;
+  }
   if (skipped.length === 0) delete result.skipped;
   return result;
 }

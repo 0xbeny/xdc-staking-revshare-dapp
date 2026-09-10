@@ -37,6 +37,9 @@ contract ZapDepositorTest is Base {
     }
 
     function test_zapForAnotherBeneficiaryRecordsBothParties() public {
+        vm.prank(bob);
+        escrow.setAcceptsLockGifts(true);
+
         vm.expectEmit(true, true, true, true, address(zap));
         emit Zapped(alice, bob, 1, 1 ether, 4 weeks);
 
@@ -47,9 +50,32 @@ contract ZapDepositorTest is Base {
         assertEq(escrow.tokensOfOwner(alice).length, 0, "alice funded it but holds nothing");
     }
 
+    function test_zapGiftRequiresBeneficiaryOptIn() public {
+        vm.prank(alice);
+        vm.expectRevert(ZapDepositor.GiftsNotAccepted.selector);
+        zap.zapCreateLockFor{value: 1 ether}(bob, 4 weeks);
+
+        vm.prank(bob);
+        escrow.setAcceptsLockGifts(true);
+        vm.prank(alice);
+        uint256 tokenId = zap.zapCreateLockFor{value: 1 ether}(bob, 4 weeks);
+        assertEq(escrow.ownerOf(tokenId), bob);
+    }
+
+    function test_dustLockAmountIsRejected() public {
+        vm.startPrank(alice);
+        wxdc.approve(address(zap), 1);
+        vm.expectRevert(VotingEscrow.AmountBelowMinimum.selector);
+        zap.lockWXDC(1, 4 weeks);
+        vm.stopPrank();
+    }
+
     /// @dev Eligibility is checked against the beneficiary, not the zap contract itself.
     function test_zapEnforcesBeneficiaryEligibility() public {
         MockCustodian custodian = new MockCustodian();
+        vm.prank(address(custodian));
+        escrow.setAcceptsLockGifts(true);
+
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(VotingEscrow.IneligibleAccount.selector, address(custodian)));
         zap.zapCreateLockFor{value: 1 ether}(address(custodian), 4 weeks);
@@ -118,7 +144,7 @@ contract ZapDepositorTest is Base {
         vm.expectRevert(ZapDepositor.ZeroAmount.selector);
         zap.zapCreateLock{value: 0}(4 weeks);
         vm.expectRevert(ZapDepositor.ZeroAmount.selector);
-        zap.zapCreateLockFor{value: 0}(bob, 4 weeks);
+        zap.zapCreateLockFor{value: 0}(alice, 4 weeks);
         vm.stopPrank();
     }
 
