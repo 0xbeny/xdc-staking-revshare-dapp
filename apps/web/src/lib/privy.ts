@@ -49,7 +49,7 @@ export const privyConfig: PrivyClientConfig = {
       "okx_wallet",
       "wallet_connect",
     ],
-    showWalletLoginFirst: false,
+    showWalletLoginFirst: true,
   },
   // Users signing in with email get an embedded wallet automatically.
   embeddedWallets: {

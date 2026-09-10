@@ -7,22 +7,35 @@ import { formatUnits } from "viem";
 import {
   useAccount,
   useBalance,
+  useReadContract,
   useSwitchChain,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 import {
   contractsReady,
+  estimateLockWeight,
   getConfiguredChainId,
   getContractsState,
   MAX_LOCK_WEEKS,
   MIN_LOCK_WEEKS,
+  shareRatio,
   unlockAtWeeks,
   weeksToDuration,
 } from "@/lib/contracts";
-import { formatDate, formatUsd, formatXdc, parseXdcInput, txErrorMessage } from "@/lib/format";
+import {
+  formatDate,
+  formatRatePct,
+  formatUsd,
+  formatWeiInput,
+  formatXdc,
+  formatXdcInputDisplay,
+  parseXdcInput,
+  txErrorMessage,
+} from "@/lib/format";
 import { useCorrectChain } from "@/lib/useCorrectChain";
 import { useXdcUsdPrice } from "@/lib/useXdcUsdPrice";
+import { requestWalletLogin } from "@/lib/walletGate";
 import { XdcLogo } from "./XdcLogo";
 import styles from "./DepositForm.module.css";
 
@@ -39,11 +52,37 @@ const TERM_PRESETS = [
   { label: "Max", weeks: MAX_LOCK_WEEKS },
 ] as const;
 
-const MONTH_FMT = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
+const MONTH_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+const MONTH_LONG = new Intl.DateTimeFormat("en-US", { month: "long" });
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+type CalView = "day" | "month" | "year";
 
 function localDayKey(d: Date): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function monthStart(y: number, m: number): Date {
+  return new Date(y, m, 1);
+}
+
+function clampMonth(d: Date, min: Date, max: Date): Date {
+  if (d < min) return new Date(min);
+  if (d > max) return new Date(max);
+  return d;
 }
 
 type CalPos = {
@@ -68,27 +107,29 @@ function placeCalendar(anchor: HTMLElement): CalPos {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const ceiling = headerBottom() + gap;
-  const width = Math.min(Math.max(rect.width, 240), vw - margin * 2);
+  const width = Math.min(Math.max(rect.width, 260), vw - margin * 2);
   let left = rect.left + (rect.width - width) / 2;
   left = Math.min(Math.max(left, margin), vw - margin - width);
 
   const spaceAbove = rect.top - ceiling;
   const spaceBelow = vh - rect.bottom - margin;
   const preferAbove = spaceAbove >= 180 && spaceAbove >= spaceBelow * 0.7;
+  const preferred = 280;
 
   if (preferAbove) {
+    const maxHeight = Math.min(preferred, Math.max(160, spaceAbove - gap));
     return {
       left,
       width,
-      top: ceiling,
       bottom: vh - rect.top + gap,
+      maxHeight,
     };
   }
   return {
     left,
     width,
     top: rect.bottom + gap,
-    maxHeight: Math.max(160, spaceBelow - gap),
+    maxHeight: Math.min(preferred, Math.max(160, spaceBelow - gap)),
   };
 }
 
@@ -105,9 +146,11 @@ export function DepositForm() {
   });
 
   const [amount, setAmount] = useState("");
+  const [balanceUnit, setBalanceUnit] = useState<"xdc" | "usd">("xdc");
   const [pct, setPct] = useState<number | null>(null);
   const [weeks, setWeeks] = useState(52);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [calView, setCalView] = useState<CalView>("day");
   const [calPos, setCalPos] = useState<CalPos | null>(null);
   const [nowSec, setNowSec] = useState<number | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -191,14 +234,34 @@ export function DepositForm() {
     }
   }, [isSuccess]);
 
-  const value = useMemo(() => parseXdcInput(amount), [amount]);
   const xdcUsd = useXdcUsdPrice();
+  const value = useMemo(() => parseXdcInput(amount), [amount]);
   const amountUsd = useMemo(() => {
     if (xdcUsd == null || value == null || value === 0n) return null;
     return Number(formatUnits(value, 18)) * xdcUsd;
   }, [value, xdcUsd]);
+  const balanceUsd = useMemo(() => {
+    if (xdcUsd == null || !balance) return null;
+    return Number(formatUnits(balance.value, 18)) * xdcUsd;
+  }, [balance, xdcUsd]);
   const duration = weeksToDuration(weeks);
-  const weightPct = Math.round((weeks / MAX_LOCK_WEEKS) * 100);
+  const { data: poolWeight } = useReadContract({
+    address: state.deployment.votingEscrow,
+    abi: abis.VotingEscrow,
+    functionName: "totalSupply",
+    query: { enabled: ready, refetchInterval: 15_000 },
+  });
+  const weightRate = weeks / MAX_LOCK_WEEKS;
+  const estimatedWeight =
+    value != null && value > 0n
+      ? estimateLockWeight(value, unlockTs, nowSec ?? Math.floor(Date.now() / 1000))
+      : 0n;
+  const shareLabel =
+    value == null || value === 0n
+      ? "—"
+      : poolWeight === undefined
+        ? "—"
+        : formatRatePct(shareRatio(estimatedWeight, poolWeight));
 
   const applyPct = (p: number) => {
     reset();
@@ -206,9 +269,7 @@ export function DepositForm() {
     const bal = balance?.value ?? 0n;
     let v = (bal * BigInt(p)) / 100n;
     if (p === 100) v = v > GAS_RESERVE ? v - GAS_RESERVE : 0n;
-    const s = formatUnits(v, 18);
-    const [whole = "0", frac = ""] = s.split(".");
-    setAmount(frac ? `${whole}.${frac.slice(0, 4)}`.replace(/\.?0+$/, "") : whole);
+    setAmount(formatWeiInput(v, 4));
   };
 
   const busy = isPending || confirming || switching;
@@ -228,8 +289,7 @@ export function DepositForm() {
             ? "Staking…"
             : "Stake XDC";
 
-  const disabled =
-    !ready || !isConnected || !address || busy || (onExpectedChain && invalidAmount);
+  const disabled = !ready || busy || (isConnected && onExpectedChain && invalidAmount);
 
   const errorText = error
     ? txErrorMessage(error)
@@ -250,10 +310,68 @@ export function DepositForm() {
     return cells;
   }, [viewMonth]);
 
-  const canPrev = viewMonth > minMonth;
-  const canNext = viewMonth < maxMonth;
-  const selectedKey = localDayKey(new Date(unlockTs * 1000));
+  const yearPageStart = useMemo(() => {
+    const y = viewMonth.getFullYear();
+    return y - ((y - minMonth.getFullYear()) % 12);
+  }, [viewMonth, minMonth]);
+
+  const yearOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => yearPageStart + i);
+  }, [yearPageStart]);
+
+  const canPrev =
+    calView === "day"
+      ? viewMonth > minMonth
+      : calView === "month"
+        ? viewMonth.getFullYear() > minMonth.getFullYear()
+        : yearPageStart > minMonth.getFullYear();
+  const canNext =
+    calView === "day"
+      ? viewMonth < maxMonth
+      : calView === "month"
+        ? viewMonth.getFullYear() < maxMonth.getFullYear()
+        : yearPageStart + 11 < maxMonth.getFullYear();
+
+  const selectedDate = new Date(unlockTs * 1000);
+  const selectedKey = localDayKey(selectedDate);
   const hasBalance = Boolean(isConnected && balance);
+
+  const calTitle =
+    calView === "day"
+      ? `${MONTH_LONG.format(viewMonth)} ${viewMonth.getFullYear()}`
+      : calView === "month"
+        ? String(viewMonth.getFullYear())
+        : `${yearPageStart} – ${yearPageStart + 11}`;
+
+  const stepCalendar = (dir: -1 | 1) => {
+    if (calView === "day") {
+      setViewMonth((m) =>
+        clampMonth(monthStart(m.getFullYear(), m.getMonth() + dir), minMonth, maxMonth),
+      );
+      return;
+    }
+    if (calView === "month") {
+      setViewMonth((m) =>
+        clampMonth(monthStart(m.getFullYear() + dir, m.getMonth()), minMonth, maxMonth),
+      );
+      return;
+    }
+    const next = yearPageStart + dir * 12;
+    const targetYear = Math.min(
+      Math.max(next, minMonth.getFullYear()),
+      maxMonth.getFullYear(),
+    );
+    setViewMonth((m) =>
+      clampMonth(monthStart(targetYear, m.getMonth()), minMonth, maxMonth),
+    );
+  };
+
+  const openPicker = () => {
+    const d = new Date(unlockTs * 1000);
+    setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+    setCalView("day");
+    setPickerOpen((v) => !v);
+  };
 
   return (
     <section className={styles.panel} id="deposit" aria-labelledby="deposit-title">
@@ -269,14 +387,30 @@ export function DepositForm() {
           <span className={styles.balance}>
             {hasBalance ? (
               <>
-                {formatXdc(balance!.value)} XDC
+                <span>
+                  {balanceUnit === "xdc"
+                    ? `${formatXdc(balance!.value)} XDC`
+                    : balanceUsd != null
+                      ? formatUsd(balanceUsd)
+                      : "$—"}
+                </span>
                 <button
                   type="button"
-                  className={styles.maxBtn}
-                  disabled={!balance || balance.value === 0n}
-                  onClick={() => applyPct(100)}
+                  className={styles.unitSwitch}
+                  onClick={() => setBalanceUnit((u) => (u === "xdc" ? "usd" : "xdc"))}
+                  disabled={xdcUsd == null}
+                  title={
+                    xdcUsd == null
+                      ? "Price unavailable"
+                      : balanceUnit === "xdc"
+                        ? "Show balance in USD"
+                        : "Show balance in XDC"
+                  }
+                  aria-label={
+                    balanceUnit === "xdc" ? "Show balance in USD" : "Show balance in XDC"
+                  }
                 >
-                  MAX
+                  <SwitchIcon />
                 </button>
               </>
             ) : (
@@ -284,50 +418,41 @@ export function DepositForm() {
             )}
           </span>
         </div>
-        <div className={styles.amountWrap}>
-          <span className={styles.token}>
-            <XdcLogo size={22} />
-            <span>XDC</span>
-          </span>
-          <input
-            id="deposit-amount"
-            className={styles.input}
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder="0.0"
-            value={amount}
-            onChange={(e) => {
-              reset();
-              setPct(null);
-              setAmount(e.target.value);
-            }}
-          />
-        </div>
-        <div className={styles.usdRow} aria-live="polite">
-          {amountUsd != null ? (
-            <span className={styles.usdWorth}>≈ {formatUsd(amountUsd)}</span>
-          ) : (
-            <span className={styles.usdWorthMuted}>≈ $—</span>
-          )}
-          {xdcUsd != null ? (
-            <span className={styles.usdSpot} title="Spot from CoinGecko">
-              1 XDC ≈ {formatUsd(xdcUsd, 4)}
+        <div className={styles.amountBox}>
+          <div className={styles.amountMain}>
+            <span className={styles.token}>
+              <XdcLogo size={32} />
+              <span>XDC</span>
             </span>
-          ) : null}
-        </div>
-        <div className={styles.pctRow}>
-          <input
-            className={styles.pctSlider}
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={pct ?? 0}
-            disabled={!hasBalance || (balance?.value ?? 0n) === 0n}
-            onChange={(e) => applyPct(Number(e.target.value))}
-            aria-label="Percentage of wallet balance"
-          />
-          <div className={styles.pctStops}>
+            <div className={styles.amountValue}>
+              <input
+                id="deposit-amount"
+                className={styles.input}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="0.0"
+                value={amount}
+                onChange={(e) => {
+                  reset();
+                  setPct(null);
+                  setAmount(formatXdcInputDisplay(e.target.value));
+                }}
+              />
+              <span className={styles.amountUsd} aria-live="polite">
+                {amountUsd != null ? `≈ ${formatUsd(amountUsd)}` : "≈ $—"}
+              </span>
+            </div>
+            <button
+              type="button"
+              className={styles.maxBtn}
+              disabled={!hasBalance || !balance || balance.value === 0n}
+              onClick={() => applyPct(100)}
+              aria-label="Use maximum balance"
+            >
+              MAX
+            </button>
+          </div>
+          <div className={styles.pctInline} role="group" aria-label="Percentage of wallet balance">
             {PCT_STOPS.map((p) => (
               <button
                 key={p}
@@ -354,15 +479,10 @@ export function DepositForm() {
           className={styles.dateField}
           aria-expanded={pickerOpen}
           aria-haspopup="dialog"
-          onClick={() => {
-            const d = new Date(unlockTs * 1000);
-            setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
-            setPickerOpen((v) => !v);
-          }}
+          onClick={openPicker}
         >
           <span>{formatDate(unlockTs)}</span>
-          <span className={styles.dateMeta}>
-            {weeks}w · ~{weightPct}%
+          <span className={styles.dateMeta} aria-hidden>
             <CalendarIcon />
           </span>
         </button>
@@ -383,67 +503,160 @@ export function DepositForm() {
                 bottom: calPos.bottom,
               }}
             >
+              <div className={styles.calSelected}>
+                <span className={styles.calSelectedLabel}>Unlock</span>
+                <span className={styles.calSelectedValue}>{formatDate(unlockTs)}</span>
+              </div>
+
               <div className={styles.calHead}>
                 <button
                   type="button"
                   className={styles.calNav}
                   disabled={!canPrev}
-                  onClick={() =>
-                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))
+                  onClick={() => stepCalendar(-1)}
+                  aria-label={
+                    calView === "day"
+                      ? "Previous month"
+                      : calView === "month"
+                        ? "Previous year"
+                        : "Previous years"
                   }
-                  aria-label="Previous month"
                 >
-                  ‹
+                  <ChevronIcon dir="left" />
                 </button>
-                <span className={styles.calMonth}>{MONTH_FMT.format(viewMonth)}</span>
+                <button
+                  type="button"
+                  className={styles.calTitleBtn}
+                  onClick={() =>
+                    setCalView((v) => (v === "day" ? "month" : v === "month" ? "year" : "year"))
+                  }
+                  aria-label={
+                    calView === "day"
+                      ? "Choose month"
+                      : calView === "month"
+                        ? "Choose year"
+                        : "Year range"
+                  }
+                  disabled={calView === "year"}
+                >
+                  <span>{calTitle}</span>
+                  {calView !== "year" ? <ChevronIcon dir="down" /> : null}
+                </button>
                 <button
                   type="button"
                   className={styles.calNav}
                   disabled={!canNext}
-                  onClick={() =>
-                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))
+                  onClick={() => stepCalendar(1)}
+                  aria-label={
+                    calView === "day"
+                      ? "Next month"
+                      : calView === "month"
+                        ? "Next year"
+                        : "Next years"
                   }
-                  aria-label="Next month"
                 >
-                  ›
+                  <ChevronIcon dir="right" />
                 </button>
               </div>
-              <div className={styles.calGrid}>
-                {DOW.map((d) => (
-                  <span key={d} className={styles.calDow}>
-                    {d}
-                  </span>
-                ))}
-                {calendarCells.map((cell, i) => {
-                  if (!cell) return <span key={`e${i}`} />;
-                  const hit = unlockByDayKey.get(cell.key);
-                  if (!hit) {
-                    return (
-                      <span key={cell.key} className={styles.calDayOff}>
-                        {cell.day}
+
+              {calView === "day" ? (
+                <div className={styles.calBody} key="day">
+                  <div className={styles.calGrid}>
+                    {DOW.map((d) => (
+                      <span key={d} className={styles.calDow}>
+                        {d}
                       </span>
+                    ))}
+                    {calendarCells.map((cell, i) => {
+                      if (!cell) return <span key={`e${i}`} className={styles.calDayPad} />;
+                      const hit = unlockByDayKey.get(cell.key);
+                      if (!hit) {
+                        return (
+                          <span key={cell.key} className={styles.calDayOff}>
+                            {cell.day}
+                          </span>
+                        );
+                      }
+                      const isSelected = cell.key === selectedKey;
+                      return (
+                        <button
+                          key={cell.key}
+                          type="button"
+                          className={`${styles.calDay} ${isSelected ? styles.calDaySelected : ""}`}
+                          onClick={() => {
+                            setWeeks(hit.weeks);
+                            setPickerOpen(false);
+                            setCalView("day");
+                          }}
+                        >
+                          {cell.day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className={styles.calHint}>
+                    Only week-aligned unlock days are selectable (1 week–2 years).
+                  </p>
+                </div>
+              ) : null}
+
+              {calView === "month" ? (
+                <div className={`${styles.calBody} ${styles.calPickerGrid}`} key="month">
+                  {MONTH_SHORT.map((label, month) => {
+                    const candidate = monthStart(viewMonth.getFullYear(), month);
+                    const disabled = candidate < minMonth || candidate > maxMonth;
+                    const isActive =
+                      selectedDate.getFullYear() === viewMonth.getFullYear() &&
+                      selectedDate.getMonth() === month;
+                    const isViewing = viewMonth.getMonth() === month;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`${styles.calPick} ${isActive ? styles.calPickActive : ""} ${isViewing && !isActive ? styles.calPickCurrent : ""}`}
+                        disabled={disabled}
+                        onClick={() => {
+                          setViewMonth(clampMonth(candidate, minMonth, maxMonth));
+                          setCalView("day");
+                        }}
+                      >
+                        {label}
+                      </button>
                     );
-                  }
-                  const isSelected = cell.key === selectedKey;
-                  return (
-                    <button
-                      key={cell.key}
-                      type="button"
-                      className={`${styles.calDay} ${isSelected ? styles.calDaySelected : ""}`}
-                      onClick={() => {
-                        setWeeks(hit.weeks);
-                        setPickerOpen(false);
-                      }}
-                    >
-                      {cell.day}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className={styles.calHint}>
-                Highlighted days are week-aligned unlocks (1–104 weeks). Grey days are not
-                available.
-              </p>
+                  })}
+                </div>
+              ) : null}
+
+              {calView === "year" ? (
+                <div className={`${styles.calBody} ${styles.calPickerGrid}`} key="year">
+                  {yearOptions.map((year) => {
+                    const disabled =
+                      year < minMonth.getFullYear() || year > maxMonth.getFullYear();
+                    const isActive = selectedDate.getFullYear() === year;
+                    const isViewing = viewMonth.getFullYear() === year;
+                    return (
+                      <button
+                        key={year}
+                        type="button"
+                        className={`${styles.calPick} ${isActive ? styles.calPickActive : ""} ${isViewing && !isActive ? styles.calPickCurrent : ""}`}
+                        disabled={disabled}
+                        onClick={() => {
+                          setViewMonth(
+                            clampMonth(
+                              monthStart(year, viewMonth.getMonth()),
+                              minMonth,
+                              maxMonth,
+                            ),
+                          );
+                          setCalView("month");
+                        }}
+                      >
+                        {year}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>,
             document.body,
           )}
@@ -457,11 +670,29 @@ export function DepositForm() {
                 setWeeks(p.weeks);
                 const d = new Date(unlockAtWeeks(p.weeks) * 1000);
                 setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                setCalView("day");
               }}
             >
               {p.label}
             </button>
           ))}
+        </div>
+        <div className={styles.rateRow}>
+          <div className={styles.rateItem} tabIndex={0} aria-describedby="weight-tip">
+            <span className={styles.rateLabel}>Weight</span>
+            <span className={styles.rateValue}>{formatRatePct(weightRate)}</span>
+            <span id="weight-tip" className={styles.rateTip} role="tooltip">
+              Of max for this amount
+            </span>
+          </div>
+          <div className={styles.rateItem} tabIndex={0} aria-describedby="share-tip">
+            <span className={styles.rateLabel}>Share</span>
+            <span className={styles.rateValue}>{shareLabel}</span>
+            <span id="share-tip" className={styles.rateTip} role="tooltip">
+              Of the pool after you lock. This percentage may adjust over time as more stakers
+              interact — it is not fixed.
+            </span>
+          </div>
         </div>
       </div>
 
@@ -471,6 +702,10 @@ export function DepositForm() {
           className={styles.submit}
           disabled={disabled}
           onClick={() => {
+            if (!isConnected) {
+              requestWalletLogin();
+              return;
+            }
             if (!onExpectedChain) {
               switchChain({ chainId: expectedChainId });
               return;
@@ -500,10 +735,53 @@ export function DepositForm() {
 
 function CalendarIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
       <rect x="2" y="3.5" width="12" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.4" />
       <path d="M2 6.5h12" stroke="currentColor" strokeWidth="1.4" />
       <path d="M5.5 2v3M10.5 2v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ dir }: { dir: "left" | "right" | "down" }) {
+  const rotate = dir === "left" ? 90 : dir === "right" ? -90 : 0;
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden
+      style={{ transform: `rotate(${rotate}deg)` }}
+    >
+      <path
+        d="M4 6.5 8 10.5 12 6.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SwitchIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden className={styles.switchIcon}>
+      <path
+        d="M4.5 5.5h7M9.5 3.5 11.5 5.5 9.5 7.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M11.5 10.5h-7M6.5 8.5 4.5 10.5 6.5 12.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

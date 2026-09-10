@@ -1,11 +1,13 @@
 "use client";
 
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import type { Address } from "viem";
 import { shortAddress } from "@/lib/format";
 import { getConfiguredChainId, getAppChain } from "@/lib/contracts";
 import { privyEnabled } from "@/lib/privy";
+import { registerWalletLogin } from "@/lib/walletGate";
 import styles from "./ConnectButton.module.css";
 
 export function ConnectButton() {
@@ -49,13 +51,28 @@ function useWrongNetworkButton() {
 function PrivyConnectButton() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const { ready, authenticated, login, logout } = usePrivy();
-  const { address } = useAccount();
+  const { ready, authenticated, login, logout, connectWallet } = usePrivy();
+  const { wallets } = useWallets();
+  const { address: wagmiAddress } = useAccount();
   const appChain = getAppChain();
   const wrongNetwork = useWrongNetworkButton();
+  const privyAddress = wallets.find((w) => w.address)?.address as Address | undefined;
+  const address = wagmiAddress ?? privyAddress;
+
+  useEffect(() => {
+    if (!ready) return;
+    registerWalletLogin(() => {
+      if (authenticated && !address) {
+        void connectWallet();
+        return;
+      }
+      void login();
+    });
+    return () => registerWalletLogin(null);
+  }, [ready, login, connectWallet, authenticated, address]);
 
   // First paint must match SSR (no wallet session on the server).
-  if (!mounted) return <IdleButton label="Loading…" />;
+  if (!mounted) return <IdleButton label="Connect wallet" />;
   if (wrongNetwork) return wrongNetwork;
 
   if (authenticated && address) {
@@ -65,7 +82,7 @@ function PrivyConnectButton() {
         <button
           type="button"
           className={`${styles.btn} ${styles.secondary}`}
-          onClick={() => logout()}
+          onClick={() => void logout()}
           title="Log out"
         >
           <span className={styles.addr}>{shortAddress(address)}</span>
@@ -74,8 +91,27 @@ function PrivyConnectButton() {
     );
   }
 
+  // Session exists but no wallet yet (embedded create lag, or wallet not linked).
   if (authenticated && !address) {
-    return <IdleButton label="Connecting…" />;
+    return (
+      <div className={styles.wrap}>
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.primary}`}
+          disabled={!ready}
+          onClick={() => void connectWallet()}
+        >
+          Connect wallet
+        </button>
+        <button
+          type="button"
+          className={`${styles.btn} ${styles.secondary}`}
+          onClick={() => void logout()}
+        >
+          Sign out
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -83,9 +119,11 @@ function PrivyConnectButton() {
       type="button"
       className={`${styles.btn} ${styles.primary}`}
       disabled={!ready}
-      onClick={() => login()}
+      onClick={() => {
+        void login();
+      }}
     >
-      {ready ? "Sign in" : "Loading…"}
+      {ready ? "Connect wallet" : "Loading…"}
     </button>
   );
 }
@@ -100,6 +138,13 @@ function LegacyConnectButton() {
   const expected = getConfiguredChainId();
   const appChain = getAppChain();
   const wrongNetwork = useWrongNetworkButton();
+  const injected = connectors[0];
+
+  useEffect(() => {
+    if (!injected) return;
+    registerWalletLogin(() => connect({ connector: injected, chainId: expected }));
+    return () => registerWalletLogin(null);
+  }, [injected, connect, expected]);
 
   if (!mounted) return <IdleButton label="Connect wallet" />;
   if (wrongNetwork) return wrongNetwork;
@@ -120,7 +165,7 @@ function LegacyConnectButton() {
     );
   }
 
-  const connector = connectors[0];
+  const connector = injected;
 
   return (
     <button

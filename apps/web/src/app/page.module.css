@@ -23,7 +23,8 @@
 .widget {
   position: relative;
   z-index: 1;
-  width: min(100%, 26.5rem);
+  /* Sized for ~125% readability at default browser zoom. */
+  width: min(100%, 32.5rem);
 }
 
 @media (max-width: 640px) {

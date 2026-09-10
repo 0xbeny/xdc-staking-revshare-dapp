@@ -76,6 +76,63 @@ export function parseXdcInput(raw: string): bigint | null {
   }
 }
 
+/** Thousand-separators for the stake amount field (keeps an optional decimal). */
+export function formatXdcInputDisplay(raw: string, maxDecimals = 18): string {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  if (!cleaned) return "";
+  const dot = cleaned.indexOf(".");
+  const wholeRaw = dot === -1 ? cleaned : cleaned.slice(0, dot);
+  const fracRaw =
+    dot === -1 ? null : cleaned.slice(dot + 1).replace(/\./g, "").slice(0, maxDecimals);
+  const whole = wholeRaw.replace(/^0+(?=\d)/, "") || (fracRaw != null ? "0" : wholeRaw);
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (fracRaw != null) return `${grouped}.${fracRaw}`;
+  if (dot !== -1) return `${grouped}.`;
+  return grouped;
+}
+
+/** Format wei XDC for the amount input (trimmed decimals + commas). */
+export function formatWeiInput(wei: bigint, maxDecimals = 4): string {
+  const s = formatUnits(wei, 18);
+  const [whole = "0", frac = ""] = s.split(".");
+  const raw = frac
+    ? `${whole}.${frac.slice(0, maxDecimals)}`.replace(/\.?0+$/, "")
+    : whole;
+  return formatXdcInputDisplay(raw, maxDecimals);
+}
+
+/** 52-week years and 4-week months — matches the widget term chips. */
+export function formatLockDuration(weeks: number): string {
+  const n = Math.min(104, Math.max(0, Math.floor(weeks)));
+  if (n <= 0) return "1 week";
+  const years = Math.floor(n / 52);
+  const rest = n % 52;
+  const months = Math.floor(rest / 4);
+  const leftoverWeeks = rest % 4;
+  const parts: string[] = [];
+  if (years === 1) parts.push("a year");
+  else if (years > 1) parts.push(`${years} years`);
+  if (months === 1) parts.push("1 month");
+  else if (months > 1) parts.push(`${months} months`);
+  if (leftoverWeeks === 1) parts.push("1 week");
+  else if (leftoverWeeks > 1) parts.push(`${leftoverWeeks} weeks`);
+  if (parts.length === 0) return "1 week";
+  if (parts.length === 1) return parts[0]!;
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts[0]}, ${parts[1]} and ${parts[2]}`;
+}
+
+export function formatRatePct(ratio: number): string {
+  if (!Number.isFinite(ratio) || ratio <= 0) return "0%";
+  const pct = ratio * 100;
+  if (pct >= 99.95) return "100%";
+  if (pct >= 10) return `${pct.toFixed(1).replace(/\.0$/, "")}%`;
+  if (pct >= 1) return `${pct.toFixed(1)}%`;
+  if (pct >= 0.01) return `${pct.toFixed(2)}%`;
+  if (pct >= 0.001) return `${pct.toFixed(3)}%`;
+  return "<0.001%";
+}
+
 export function weightHint(weeks: number): string {
   const pct = Math.round((Math.min(104, Math.max(1, weeks)) / 104) * 100);
   return `~${pct}% of max weight for this principal`;

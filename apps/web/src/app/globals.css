@@ -84,6 +84,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.appFrame {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.appFrame > main {
+  flex: 1;
+}
+
 a {
   color: var(--teal-300);
   text-decoration: none;

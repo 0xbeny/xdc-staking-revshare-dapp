@@ -32,6 +32,8 @@ process.env.NEXT_PUBLIC_GIT_SHA = gitSha;
 const nextConfig: NextConfig = {
   transpilePackages: ["@vexdc/contracts"],
   reactStrictMode: true,
+  // Local Privy / wallet flows often hit 127.0.0.1 while `next dev` binds localhost.
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha,
   },
@@ -49,6 +51,9 @@ const nextConfig: NextConfig = {
       "@x402/evm": false,
       "@x402/svm": false,
       "@x402/types": false,
+      // Privy optionally pulls Farcaster Solana; missing it leaves the
+      // client bundle unable to hydrate, so the header stays on "Loading…".
+      "@farcaster/mini-app-solana": false,
     };
     config.resolve.fallback = {
       ...config.resolve.fallback,

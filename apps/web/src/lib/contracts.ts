@@ -13,6 +13,7 @@ const ZERO = "0x0000000000000000000000000000000000000000" as const satisfies Add
 export const WEEK_SECONDS = 604_800;
 export const MIN_LOCK_WEEKS = 1;
 export const MAX_LOCK_WEEKS = 104;
+export const MAX_LOCK_SECONDS = MAX_LOCK_WEEKS * WEEK_SECONDS;
 
 export function getConfiguredChainId(): number {
   const raw = process.env.NEXT_PUBLIC_CHAIN_ID ?? "51";
@@ -99,6 +100,22 @@ export function ceilWeek(timestampSec: number): number {
 export function unlockAtWeeks(weeks: number, nowSec = Math.floor(Date.now() / 1000)): number {
   const duration = Number(weeksToDuration(weeks));
   return ceilWeek(nowSec + duration);
+}
+
+/** Same truncated-slope formula as `VotingEscrow.weightAt`. */
+export function estimateLockWeight(amount: bigint, unlockTs: number, nowSec: number): bigint {
+  if (amount === 0n || unlockTs <= nowSec) return 0n;
+  const remaining = BigInt(unlockTs - nowSec);
+  const maxLock = BigInt(MAX_LOCK_SECONDS);
+  const effective = remaining > maxLock ? maxLock : remaining;
+  return (amount / maxLock) * effective;
+}
+
+/** `weight / (poolWeight + weight)` as a 0–1 ratio. */
+export function shareRatio(weight: bigint, poolWeight: bigint): number {
+  const denom = poolWeight + weight;
+  if (weight === 0n || denom === 0n) return 0;
+  return Number((weight * 10_000_000n) / denom) / 10_000_000;
 }
 
 export function explorerAddressUrl(chainId: number, address: string): string {

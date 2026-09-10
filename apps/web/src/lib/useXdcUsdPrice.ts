@@ -2,13 +2,34 @@
 
 import { useEffect, useState } from "react";
 
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/simple/price?ids=xdc-network&vs_currencies=usd";
-
 const CACHE_MS = 60_000;
 
 let cached: { price: number; at: number } | null = null;
 let inflight: Promise<number | null> | null = null;
+
+function parsePositive(n: unknown): number | null {
+  const v = typeof n === "string" ? Number(n) : typeof n === "number" ? n : NaN;
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+async function fetchFromGate(): Promise<number | null> {
+  const res = await fetch("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=XDC_USDT", {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as Array<{ last?: string }>;
+  return parsePositive(data[0]?.last);
+}
+
+async function fetchFromCoinGecko(): Promise<number | null> {
+  const res = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=xdc-network&vs_currencies=usd",
+    { headers: { accept: "application/json" } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { "xdc-network"?: { usd?: number } };
+  return parsePositive(data["xdc-network"]?.usd);
+}
 
 async function fetchXdcUsd(): Promise<number | null> {
   if (cached && Date.now() - cached.at < CACHE_MS) return cached.price;
@@ -16,13 +37,8 @@ async function fetchXdcUsd(): Promise<number | null> {
 
   inflight = (async () => {
     try {
-      const res = await fetch(COINGECKO_URL, { headers: { accept: "application/json" } });
-      if (!res.ok) return cached?.price ?? null;
-      const data = (await res.json()) as { "xdc-network"?: { usd?: number } };
-      const price = data["xdc-network"]?.usd;
-      if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
-        return cached?.price ?? null;
-      }
+      const price = (await fetchFromGate()) ?? (await fetchFromCoinGecko());
+      if (price == null) return cached?.price ?? null;
       cached = { price, at: Date.now() };
       return price;
     } catch {
@@ -35,7 +51,7 @@ async function fetchXdcUsd(): Promise<number | null> {
   return inflight;
 }
 
-/** Spot XDC/USD from CoinGecko (module-cached, refreshed about once a minute). */
+/** Spot XDC/USD (Gate.io first, CoinGecko fallback; module-cached ~1 min). */
 export function useXdcUsdPrice(): number | null {
   const [price, setPrice] = useState<number | null>(() => cached?.price ?? null);
 

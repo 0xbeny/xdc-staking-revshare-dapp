@@ -29,11 +29,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body suppressHydrationWarning>
+        {/* Single child under Providers — Privy wraps `children` in a Fragment and
+            warns on keyless sibling arrays when Header/main/footer are passed raw. */}
         <Providers>
-          <Header />
-          <ContractsBanner />
-          <main>{children}</main>
-          <SiteFooter />
+          <div className="appFrame">
+            <Header />
+            <ContractsBanner />
+            <main>{children}</main>
+            <SiteFooter />
+          </div>
         </Providers>
       </body>
     </html>
