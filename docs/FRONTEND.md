@@ -6,6 +6,9 @@ Next.js 15 App Router dApp for veXDC lockers. Visual system: [`apps/web/design.m
 
 - Next.js 15, React 19, TypeScript
 - wagmi v2 + viem + TanStack Query
+- Privy (`@privy-io/react-auth` + `@privy-io/wagmi`) — email/social login,
+  embedded wallets, external wallets, mobile via WalletConnect. Falls back to
+  plain wagmi (injected + WalletConnect) when `NEXT_PUBLIC_PRIVY_APP_ID` is unset.
 - Recharts (earnings / protocol charts)
 - `@vexdc/contracts` for ABIs + Apothem addresses
 
@@ -20,7 +23,8 @@ cp apps/web/.env.example apps/web/.env.local
 | `NEXT_PUBLIC_CHAIN_ID` | `51` |
 | `NEXT_PUBLIC_RPC_URL` | `https://rpc.apothem.network` |
 | `NEXT_PUBLIC_INDEXER_URL` | `https://your-indexer.vercel.app` |
-| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect cloud id |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Privy app id ([dashboard.privy.io](https://dashboard.privy.io)) — enables email/social login + Privy wallet modal |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect cloud id (mobile wallets / QR; also used by the non-Privy fallback) |
 
 ## Scripts
 
@@ -51,8 +55,10 @@ Set the `NEXT_PUBLIC_*` env vars in the Vercel project (`NEXT_PUBLIC_INDEXER_URL
 
 | Path | Purpose |
 |---|---|
-| `/` | Brand hero + Zap deposit |
+| `/` | Brand hero + Zap deposit (GSAP entrance) |
 | `/dashboard` | Positions + protocol charts |
 | `/position/[tokenId]` | Manage, claim, exit |
+| `/system` | Contract registry, pause/health KPIs, SystemAccess role matrix |
+| `/admin` | Role-gated admin desk (pause, escrow params, adapters, grant/revoke) |
 
-Live reads (weight, claimable) use RPC. History/charts use the indexer API.
+Live reads (weight, claimable, roles) use RPC. History/charts use the indexer API.

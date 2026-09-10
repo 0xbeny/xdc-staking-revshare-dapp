@@ -21,6 +21,13 @@ const nextConfig: NextConfig = {
       "@vexdc/walletconnect": walletConnectEntry,
       "@react-native-async-storage/async-storage": false,
       "pino-pretty": false,
+      // @privy-io/wagmi imports the wagmi connectors barrel → @base-org/account
+      // → Coinbase CDP SDK → optional @x402 packages. None of that is used
+      // (Privy drives Coinbase Wallet through its own SDK); stub the chain.
+      "@coinbase/cdp-sdk": false,
+      "@x402/evm": false,
+      "@x402/svm": false,
+      "@x402/types": false,
     };
     config.resolve.fallback = {
       ...config.resolve.fallback,
