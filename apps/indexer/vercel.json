@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
   "installCommand": "cd ../.. && pnpm install",
-  "buildCommand": "cd ../.. && pnpm --filter @vexdc/contracts build && pnpm --filter @vexdc/indexer build",
+  "buildCommand": "cd ../.. && pnpm --filter @vexdc/contracts build && pnpm --filter @vexdc/indexer db:migrate && pnpm --filter @vexdc/indexer build",
   "crons": [
     {
       "path": "/api/sync",
