@@ -8,8 +8,9 @@
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: clamp(0.85rem, 2.5vw, 1rem);
   min-height: 160px;
+  min-width: 0;
 }
 
 .head {
@@ -18,6 +19,7 @@
   align-items: baseline;
   gap: 0.75rem;
   margin-bottom: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .title {
@@ -52,7 +54,7 @@
 
 .chart {
   width: 100%;
-  min-height: 200px;
+  min-height: clamp(160px, 36vw, 200px);
 }
 
 .empty {

@@ -1,11 +1,12 @@
 .hero {
   position: relative;
-  height: calc(100dvh - var(--header-h) - var(--footer-h));
+  min-height: calc(100dvh - var(--header-h) - var(--footer-h));
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.25rem;
-  overflow: hidden;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .heroGlow {
@@ -24,3 +25,18 @@
   z-index: 1;
   width: min(100%, 26.5rem);
 }
+
+@media (max-width: 640px) {
+  .hero {
+    align-items: flex-start;
+    padding-block: 1rem 1.5rem;
+  }
+}
+
+@media (max-height: 720px) {
+  .hero {
+    align-items: flex-start;
+    padding-block: 1rem 1.5rem;
+  }
+}
+

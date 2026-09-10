@@ -1,25 +1,25 @@
 .page {
-  padding: 2.5rem 0 5rem;
+  padding: clamp(1.5rem, 4vw, 2.5rem) 0 clamp(3.5rem, 8vw, 5rem);
 }
 
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 2.5rem;
+  gap: clamp(1.5rem, 4vw, 2.5rem);
   align-items: start;
 }
 
 .col {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: clamp(1.25rem, 3vw, 2rem);
   min-width: 0;
 }
 
 .sectionTitle {
   margin: 0 0 0.75rem;
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: clamp(1.15rem, 3vw, 1.35rem);
   font-weight: 700;
   color: var(--ink-bright);
 }
@@ -28,15 +28,21 @@
   margin: -0.35rem 0 1rem;
   color: var(--ink-muted);
   font-size: 0.9rem;
+  max-width: 40rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1023px) {
   .grid {
     grid-template-columns: 1fr;
-    gap: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding-top: 1.25rem;
   }
 
-  .page {
-    padding: 1.75rem 0 4rem;
+  .sectionLead {
+    font-size: 0.85rem;
   }
 }

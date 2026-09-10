@@ -10,6 +10,7 @@
   cursor: pointer;
   font-weight: 500;
   transition: transform 120ms ease, background 150ms ease, border-color 150ms ease;
+  white-space: nowrap;
 }
 
 .btn:active:not(:disabled) {
@@ -60,9 +61,26 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  max-width: 100%;
 }
 
 .addr {
   font-family: var(--font-mono);
   font-size: 0.85rem;
+}
+
+@media (max-width: 480px) {
+  .btn {
+    min-height: 40px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .chain {
+    display: none;
+  }
+
+  .addr {
+    font-size: 0.8rem;
+  }
 }
