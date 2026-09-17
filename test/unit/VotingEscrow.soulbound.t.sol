@@ -61,11 +61,8 @@ contract VotingEscrowSoulboundTest is Base {
         }
     }
 
-    /// @dev A keeper operator gets extension rights only — never a transfer or a spend.
-    function test_operatorCannotTransferOrWithdraw() public {
-        vm.prank(alice);
-        escrow.setOperator(keeper, true);
-
+    /// @dev A third party with no owner rights cannot move principal.
+    function test_strangerCannotTransferOrWithdraw() public {
         vm.startPrank(keeper);
         vm.expectRevert(VotingEscrow.Soulbound.selector);
         escrow.transferFrom(alice, keeper, tokenId);

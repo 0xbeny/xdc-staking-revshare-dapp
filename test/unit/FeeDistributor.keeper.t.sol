@@ -14,9 +14,8 @@ contract FeeDistributorKeeperTest is Base {
         a = _lock(alice, 100_000 ether, 52 weeks);
 
         vm.startPrank(alice);
-        distributor.setKeepAtMaxLock(a, true);
         distributor.setAutoCompound(a, true);
-        escrow.setOperator(address(distributor), true);
+        escrow.setAutoExtend(a, true);
         vm.stopPrank();
 
         _nextEpoch();
@@ -109,13 +108,25 @@ contract FeeDistributorKeeperTest is Base {
 
     /// @dev A revert inside one position must not take the whole batch down.
     function test_keeperBatchToleratesIndividualFailures() public {
-        // Revoke the operator right so alice's extension reverts inside the batch.
+        vm.prank(timelock);
+        escrow.setWithdrawalCooldown(1 days);
         vm.prank(alice);
-        escrow.setOperator(address(distributor), false);
+        escrow.requestEmergencyExit(a);
 
         _intoKeeperWindow();
         vm.prank(keeper);
         distributor.batchKeepAtMaxLock(_ids(), _currentEpoch()); // must not revert
+    }
+
+    function test_keeperSkipWhenAutoExtendOff() public {
+        uint256 endBefore = escrow.locked(a).end;
+        vm.prank(alice);
+        escrow.setAutoExtend(a, false);
+
+        _intoKeeperWindow();
+        vm.prank(keeper);
+        distributor.batchKeepAtMaxLock(_ids(), _currentEpoch());
+        assertEq(escrow.locked(a).end, endBefore);
     }
 
     /// @dev §5 step 4: compounds first earn in the *next* snapshot.

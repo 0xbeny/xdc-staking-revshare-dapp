@@ -107,6 +107,8 @@ contract PenaltyFuzzTest is Base {
         escrow.setMaxPenaltyBps(bound(capLater, 0, first));
 
         vm.prank(alice);
+        escrow.setAutoExtend(tokenId, true);
+        vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
         assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore);
     }

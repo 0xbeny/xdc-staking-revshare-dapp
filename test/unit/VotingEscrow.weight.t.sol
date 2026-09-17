@@ -127,6 +127,8 @@ contract VotingEscrowWeightTest is Base {
         assertLt(escrow.balanceOfNFT(tokenId), initial);
 
         vm.prank(alice);
+        escrow.setAutoExtend(tokenId, true);
+        vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
         // forge-lint: disable-next-line(divide-before-multiply)
         assertEq(escrow.balanceOfNFT(tokenId), (100_000 ether / MAX_LOCK) * MAX_LOCK);

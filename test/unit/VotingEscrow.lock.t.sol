@@ -154,7 +154,7 @@ contract VotingEscrowLockTest is Base {
         escrow.increaseUnlockTime(tokenId, block.timestamp + MAX_LOCK + 1);
     }
 
-    function test_increaseUnlockTime_onlyOwnerOrOperator() public {
+    function test_increaseUnlockTime_onlyOwner() public {
         uint256 tokenId = _lock(alice, 100 ether, 20 weeks);
 
         vm.prank(bob);
@@ -162,10 +162,39 @@ contract VotingEscrowLockTest is Base {
         escrow.increaseUnlockTime(tokenId, block.timestamp + 40 weeks);
 
         vm.prank(alice);
-        escrow.setOperator(bob, true);
-        vm.prank(bob);
         escrow.increaseUnlockTime(tokenId, block.timestamp + 40 weeks);
         assertGt(escrow.locked(tokenId).end, block.timestamp + 39 weeks);
+    }
+
+    function test_keepAtMaxLock_requiresAutoExtend() public {
+        uint256 tokenId = _lock(alice, 100 ether, 20 weeks);
+
+        vm.expectRevert(VotingEscrow.NotOptedIn.selector);
+        escrow.keepAtMaxLock(tokenId);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.setAutoExtend(tokenId, true);
+
+        vm.prank(alice);
+        escrow.setAutoExtend(tokenId, true);
+        escrow.keepAtMaxLock(tokenId);
+        assertGt(escrow.locked(tokenId).end, block.timestamp + 100 weeks);
+
+        vm.prank(alice);
+        escrow.setAutoExtend(tokenId, false);
+        vm.expectRevert(VotingEscrow.NotOptedIn.selector);
+        escrow.keepAtMaxLock(tokenId);
+    }
+
+    function test_distributorCannotForceExtendWhenAutoExtendOff() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+        uint256 endBefore = escrow.locked(tokenId).end;
+
+        vm.prank(address(distributor));
+        vm.expectRevert(VotingEscrow.NotOptedIn.selector);
+        escrow.keepAtMaxLock(tokenId);
+        assertEq(escrow.locked(tokenId).end, endBefore);
     }
 
     function test_withdraw_returnsFullPrincipalAfterExpiry() public {

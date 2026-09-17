@@ -71,10 +71,8 @@ contract MultiDappRevenueTest is Base {
         uint256 c = _lock(carol, 50_000 ether, 4 weeks);
         _nextEpoch();
 
-        vm.startPrank(alice);
+        vm.prank(alice);
         distributor.setAutoCompound(a, true);
-        escrow.setOperator(address(distributor), true);
-        vm.stopPrank();
 
         uint256[] memory compoundIds = new uint256[](1);
         compoundIds[0] = a;

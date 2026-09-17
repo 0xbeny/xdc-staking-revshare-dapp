@@ -16,6 +16,8 @@ contract FeeDistributorClaimTest is Base {
 
     function test_claimIsBoundedAndReportsRemaining() public {
         // 60 epochs of revenue against a MAX_EPOCHS_PER_CLAIM of 52.
+        vm.prank(alice);
+        escrow.setAutoExtend(a, true);
         for (uint256 i; i < 60; ++i) {
             _notifyExact(address(usdc), 100e6);
             vm.prank(alice);
@@ -97,8 +99,6 @@ contract FeeDistributorClaimTest is Base {
         distributor.setRecipient(a, bob);
         vm.expectRevert(FeeDistributor.NotPositionOwner.selector);
         distributor.setAutoCompound(a, true);
-        vm.expectRevert(FeeDistributor.NotPositionOwner.selector);
-        distributor.setKeepAtMaxLock(a, true);
         vm.stopPrank();
     }
 
@@ -153,9 +153,8 @@ contract FeeDistributorClaimTest is Base {
         vm.expectRevert(FeeDistributor.NotAuthorized.selector);
         distributor.claimAndLock(a);
 
-        // Escrow operator may extend locks but cannot force compounding.
         vm.prank(alice);
-        escrow.setOperator(bob, true);
+        escrow.setAutoExtend(a, true);
         vm.prank(bob);
         vm.expectRevert(FeeDistributor.NotAuthorized.selector);
         distributor.claimAndLock(a);

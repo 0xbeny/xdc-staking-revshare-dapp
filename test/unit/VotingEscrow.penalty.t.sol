@@ -232,6 +232,7 @@ contract VotingEscrowPenaltyTest is Base {
 
         vm.startPrank(alice);
         escrow.increaseUnlockTime(tokenId, block.timestamp + 52 weeks);
+        escrow.setAutoExtend(tokenId, true);
         escrow.keepAtMaxLock(tokenId);
         vm.stopPrank();
 
@@ -244,7 +245,7 @@ contract VotingEscrowPenaltyTest is Base {
         uint256 tokenId = _lock(alice, 100_000 ether, 20 weeks);
 
         vm.prank(alice);
-        escrow.setOperator(keeper, true);
+        escrow.setAutoExtend(tokenId, true);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(500);

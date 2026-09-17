@@ -48,9 +48,7 @@ contract UserJourneyTest is Base {
         // 3. Earning: hold a ~0.2% share for ten epochs. Alice re-extends her 52-week profile
         //    each week; the whale sits at max lock so total supply stays roughly stable.
         vm.prank(carol);
-        distributor.setKeepAtMaxLock(whalePosition, true);
-        vm.prank(carol);
-        escrow.setOperator(address(distributor), true);
+        escrow.setAutoExtend(whalePosition, true);
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = whalePosition;
@@ -111,10 +109,8 @@ contract UserJourneyTest is Base {
         uint256 active = _lock(bob, 100_000 ether, 52 weeks);
         uint256 startWeight = escrow.balanceOfNFT(passive);
 
-        vm.startPrank(bob);
-        distributor.setKeepAtMaxLock(active, true);
-        escrow.setOperator(address(distributor), true);
-        vm.stopPrank();
+        vm.prank(bob);
+        escrow.setAutoExtend(active, true);
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = active;

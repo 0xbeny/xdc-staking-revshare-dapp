@@ -85,6 +85,7 @@ contract WeightFuzzTest is Base {
         wxdc.approve(address(escrow), add);
         escrow.increaseAmount(tokenId, add);
         uint256 afterIncrease = escrow.balanceOfNFT(tokenId);
+        escrow.setAutoExtend(tokenId, true);
         escrow.keepAtMaxLock(tokenId);
         vm.stopPrank();
 
