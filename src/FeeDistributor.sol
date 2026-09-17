@@ -99,7 +99,6 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     mapping(uint256 tokenId => address) public recipientOf;
     mapping(uint256 tokenId => bool) public autoCompound;
-    mapping(uint256 tokenId => bool) public keepAtMaxLock;
 
     // Reserved storage for future upgrades; intentionally never read.
     // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
@@ -123,7 +122,6 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     event Compounded(uint256 indexed tokenId, uint256 amount);
     event RecipientSet(uint256 indexed tokenId, address recipient);
     event AutoCompoundSet(uint256 indexed tokenId, bool enabled);
-    event KeepAtMaxLockSet(uint256 indexed tokenId, bool enabled);
     event KeeperExtended(uint256 indexed tokenId, bool success);
 
     /*//////////////////////////////////////////////////////////////
@@ -550,11 +548,6 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         emit AutoCompoundSet(tokenId, enabled);
     }
 
-    function setKeepAtMaxLock(uint256 tokenId, bool enabled) external onlyPositionOwner(tokenId) {
-        keepAtMaxLock[tokenId] = enabled;
-        emit KeepAtMaxLockSet(tokenId, enabled);
-    }
-
     /*//////////////////////////////////////////////////////////////
                                  KEEPER
     //////////////////////////////////////////////////////////////*/
@@ -577,7 +570,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
         for (uint256 i = 0; i < tokenIds.length; ++i) {
             uint256 tokenId = tokenIds[i];
-            if (!keepAtMaxLock[tokenId]) {
+            if (!escrow.autoExtend(tokenId)) {
                 emit KeeperExtended(tokenId, false);
                 continue;
             }

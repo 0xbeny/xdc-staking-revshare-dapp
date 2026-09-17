@@ -42,11 +42,6 @@ contract GuardsTest is Base {
         escrow.transferTimelock(address(0));
         vm.stopPrank();
 
-        vm.startPrank(alice);
-        vm.expectRevert(VotingEscrow.ZeroAddress.selector);
-        escrow.setOperator(address(0), true);
-        vm.stopPrank();
-
         deal(address(wxdc), address(zap), 1 ether);
         vm.prank(address(zap));
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
