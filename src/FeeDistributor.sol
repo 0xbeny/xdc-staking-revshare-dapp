@@ -266,7 +266,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     /// @notice Attributes any unaccounted balance (escrow penalties, donations) to `currentEpoch + 1`.
     /// @dev Permissionless and idempotent. Credited to the next epoch because the exiting position
     ///      is excluded from every snapshot from `currentEpoch + 1` onward.
-    function syncForfeiture(address token) public returns (uint256 credited) {
+    function syncForfeiture(address token) public nonReentrant returns (uint256 credited) {
         if (!isRewardToken[token]) {
             revert UnknownRewardToken();
         }
@@ -294,7 +294,11 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Finalizes up to `maxEpochs` closed epochs for `token`. Permissionless, bounded.
-    function settle(address token, uint256 maxEpochs) public returns (uint256 newSettledEpoch) {
+    function settle(address token, uint256 maxEpochs) public nonReentrant returns (uint256 newSettledEpoch) {
+        return _settle(token, maxEpochs);
+    }
+
+    function _settle(address token, uint256 maxEpochs) internal returns (uint256 newSettledEpoch) {
         if (!isRewardToken[token]) {
             revert UnknownRewardToken();
         }
@@ -442,7 +446,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
         // Also memoises the snapshot supply of every epoch it finalises, so `_pending` below
         // never has to recompute one.
-        settle(token, MAX_EPOCHS_PER_CLAIM);
+        _settle(token, MAX_EPOCHS_PER_CLAIM);
 
         uint256 newCursor;
         (amount, newCursor, remaining) = _pending(tokenId, token);
