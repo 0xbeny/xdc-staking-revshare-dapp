@@ -2,7 +2,12 @@
 pragma solidity 0.8.28;
 
 import {Base} from "../Base.t.sol";
+import {FeeDistributor} from "../../src/FeeDistributor.sol";
+import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
+import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
+import {ReentrantToken} from "../mocks/ReentrantClaimer.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 contract FeeDistributorForfeitureTest is Base {
     uint256 internal a;
@@ -179,6 +184,43 @@ contract FeeDistributorForfeitureTest is Base {
 
         assertEq(distributor.epochRevenue(address(usdc), epoch + 1), 0, "nothing moved forward");
         assertEq(distributor.exitForfeitMovements(address(usdc)), 0);
+    }
+
+    /// @dev A reward-token transfer hook must not credit the in-flight pull as forfeiture (M-1).
+    ///      `syncForfeiture` / `settle` share `notifyRevenue`'s reentrancy lock. We still credit
+    ///      the balance delta (not `amount == received`) so FmTokens can be reward tokens.
+    function test_notifyRevenueHookCannotDoubleCountViaSyncForfeiture() public {
+        (ReentrantToken hooked, PushAdapter local) = _listedHookToken();
+        hooked.setHook(address(distributor), abi.encodeCall(FeeDistributor.syncForfeiture, (address(hooked))));
+        _commitHookedAndExpectGuard(hooked, local);
+    }
+
+    function test_notifyRevenueHookCannotDoubleCountViaSettle() public {
+        (ReentrantToken hooked, PushAdapter local) = _listedHookToken();
+        hooked.setHook(address(distributor), abi.encodeCall(FeeDistributor.settle, (address(hooked), uint256(1))));
+        _commitHookedAndExpectGuard(hooked, local);
+    }
+
+    function _listedHookToken() internal returns (ReentrantToken hooked, PushAdapter local) {
+        hooked = new ReentrantToken();
+        address[] memory one = new address[](1);
+        one[0] = address(hooked);
+        local = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(hooked));
+        registry.registerAdapter(address(local), dapp, IRevenueRegistry.Mode.PUSH, 10_000, 1, "m1-hook");
+        vm.stopPrank();
+        hooked.mint(dapp, 100 ether);
+    }
+
+    function _commitHookedAndExpectGuard(ReentrantToken hooked, PushAdapter local) internal {
+        vm.startPrank(dapp);
+        hooked.approve(address(local), 100 ether);
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        local.commitRevenue(address(hooked), 100 ether);
+        vm.stopPrank();
+        assertEq(hooked.balanceOf(address(distributor)), 0, "failed notify must not leave tokens");
+        assertEq(distributor.accounted(address(hooked)), 0, "failed notify must not credit books");
     }
 
     /// @dev The general form: the recorded exited weight of an epoch never exceeds its supply.
