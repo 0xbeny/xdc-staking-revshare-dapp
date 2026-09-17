@@ -20,7 +20,7 @@ contract ApothemMockRevenue is Script {
     function run() external {
         address usdcAddr = vm.envAddress("USDC");
         address splitterAddr = vm.envAddress("FEE_SPLITTER");
-        uint256 amount = vm.envOr("AMOUNT", uint256(1_000e6));
+        uint256 amount = vm.envOr("AMOUNT", uint256(1000e6));
 
         require(usdcAddr.code.length > 0, "USDC missing code");
         require(splitterAddr.code.length > 0, "FEE_SPLITTER missing code");

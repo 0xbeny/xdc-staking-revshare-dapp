@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Base} from "../Base.t.sol";
 import {FeeDistributor} from "../../src/FeeDistributor.sol";
 import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
+import {Base} from "../Base.t.sol";
 import {ReentrantToken} from "../mocks/ReentrantClaimer.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
