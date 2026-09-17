@@ -36,7 +36,8 @@ interface IVotingEscrow {
     function firstEligibleEpoch(uint256 tokenId) external view returns (uint256);
     function exitEpoch(uint256 tokenId) external view returns (uint256);
     function exitedWeightByEpoch(uint256 epoch) external view returns (uint256);
-    function isOperator(address owner, address operator) external view returns (bool);
+    function autoExtend(uint256 tokenId) external view returns (bool);
+    function setAutoExtend(uint256 tokenId, bool enabled) external;
 
     function balanceOfNFT(uint256 tokenId) external view returns (uint256);
     function balanceOfNFTAt(uint256 tokenId, uint256 timestamp) external view returns (uint256);

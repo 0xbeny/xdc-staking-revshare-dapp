@@ -170,8 +170,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Contract eligibility tiers (spec §3.1 #10). EOAs need no entry.
     mapping(address account => Tier) public tierOf;
 
-    /// @notice Opt-in keeper rights. Grants `increaseUnlockTime` only — never principal.
-    mapping(address owner => mapping(address operator => bool)) private _operators;
+    /// @notice Per-position consent for permissionless `keepAtMaxLock`.
+    mapping(uint256 tokenId => bool) public autoExtend;
 
     mapping(address owner => uint256[]) private _ownedTokens;
 
@@ -227,7 +227,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     event AcceptsLockGiftsSet(address indexed account, bool enabled);
     event StakingCapSet(uint256 oldValue, uint256 newValue);
     event CapGuardianSet(address indexed previous, address indexed next);
-    event OperatorSet(address indexed owner, address indexed operator, bool approved);
+    event AutoExtendSet(uint256 indexed tokenId, bool enabled);
     event TimelockTransferStarted(address indexed from, address indexed to);
     event TimelockTransferred(address indexed from, address indexed to);
 
@@ -261,6 +261,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error NoExitRequest();
     error WrongExitKind();
     error CooldownActive(uint256 readyAt);
+    error NotOptedIn();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -442,17 +443,15 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         revert Soulbound();
     }
 
-    /// @notice Keeper rights for `increaseUnlockTime` only. Never a transfer or spend right.
-    function setOperator(address operator, bool approved) external {
-        if (operator == address(0)) {
-            revert ZeroAddress();
+    /// @notice Opt in/out of permissionless `keepAtMaxLock` for this position. Owner-only.
+    ///         Turning this off is what stops the weekly keeper; `increaseUnlockTime` stays
+    ///         owner-only and never needs a third-party approval.
+    function setAutoExtend(uint256 tokenId, bool enabled) external {
+        if (_msgSender() != _requireOwned(tokenId)) {
+            revert NotAuthorized();
         }
-        _operators[_msgSender()][operator] = approved;
-        emit OperatorSet(_msgSender(), operator, approved);
-    }
-
-    function isOperator(address owner, address operator) public view returns (bool) {
-        return _operators[owner][operator];
+        autoExtend[tokenId] = enabled;
+        emit AutoExtendSet(tokenId, enabled);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -843,9 +842,24 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function increaseUnlockTime(uint256 tokenId, uint256 newUnlock) public nonReentrant {
         _requireNoExitRequest(tokenId);
         (address owner, Lock memory oldLock) = _openLockOf(tokenId);
-        if (_msgSender() != owner && !_operators[owner][_msgSender()]) {
+        if (_msgSender() != owner) {
             revert NotAuthorized();
         }
+        _applyUnlockTime(tokenId, oldLock, newUnlock);
+    }
+
+    /// @notice Re-extend to the maximum. Permissionless if `autoExtend[tokenId]` is set.
+    ///         Owner one-shot max-extend uses `increaseUnlockTime`, not this.
+    function keepAtMaxLock(uint256 tokenId) external nonReentrant {
+        if (!autoExtend[tokenId]) {
+            revert NotOptedIn();
+        }
+        _requireNoExitRequest(tokenId);
+        (, Lock memory oldLock) = _openLockOf(tokenId);
+        _applyUnlockTime(tokenId, oldLock, block.timestamp + MAX_LOCK);
+    }
+
+    function _applyUnlockTime(uint256 tokenId, Lock memory oldLock, uint256 newUnlock) private {
         if (oldLock.end <= block.timestamp) {
             revert LockExpired();
         }
@@ -863,11 +877,6 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _rewriteLock(tokenId, oldLock, newLock);
 
         emit LockExtended(tokenId, oldLock.end, unlock);
-    }
-
-    /// @notice Keeper convenience: re-extend to the maximum. Cap is untouched by construction.
-    function keepAtMaxLock(uint256 tokenId) external {
-        increaseUnlockTime(tokenId, block.timestamp + MAX_LOCK);
     }
 
     /*//////////////////////////////////////////////////////////////
