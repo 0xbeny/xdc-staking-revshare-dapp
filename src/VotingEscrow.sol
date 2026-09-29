@@ -204,6 +204,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Per-owner weight, same (bias, slope) model as the global supply.
     ///         `getVotes` reads this instead of looping `tokensOfOwner`.
+    // slither-disable-next-line uninitialized-state
     mapping(address account => AccountPoint[]) private _accountPointHistory;
     mapping(address account => mapping(uint256 weekStart => int128)) public accountSlopeChanges;
 
@@ -721,7 +722,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
         address owner = ownerOf(tokenId);
         _checkpointAccount(owner);
-        if (_accountPointHistory[owner][_accountPointHistory[owner].length - 1].ts != uint64(block.timestamp)) {
+        AccountPoint[] storage accountHistory = _accountPointHistory[owner];
+        if (accountHistory[accountHistory.length - 1].ts != block.timestamp) {
             revert HistoryStale();
         }
 

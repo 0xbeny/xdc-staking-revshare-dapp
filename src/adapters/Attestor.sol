@@ -115,6 +115,8 @@ contract Attestor is Context, ReentrancyGuard {
         if (signedNet < 0) {
             revert NegativeNet();
         }
+        // `signedNet < 0` already reverted above.
+        // forge-lint: disable-next-line(unsafe-typecast)
         net = uint256(signedNet);
 
         uint64 distributionEpoch = EpochTime.currentEpoch().toUint64();
@@ -136,6 +138,7 @@ contract Attestor is Context, ReentrancyGuard {
         if (net > 0) {
             IERC20(token).safeTransferFrom(_msgSender(), address(this), net);
             IERC20(token).forceApprove(DISTRIBUTOR, net);
+            // forge-lint: disable-next-line(reentrancy-no-eth)
             IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, net);
         }
 
