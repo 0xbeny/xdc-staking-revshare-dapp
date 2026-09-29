@@ -187,6 +187,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint64 ts;
     }
 
+    struct AccountPoint {
+        int128 bias;
+        int128 slope;
+        uint64 ts;
+    }
+
     // slither-disable-next-line uninitialized-state
     mapping(uint256 tokenId => UserPoint[]) private _userPointHistory;
 
@@ -195,6 +201,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     /// @notice Signed slope delta applied when crossing a week boundary. Carries both the
     ///         deferred activation (+slope) and the expiry (-slope) of every lock.
     mapping(uint256 weekStart => int128) public slopeChanges;
+
+    /// @notice Per-owner weight, same (bias, slope) model as the global supply.
+    ///         `getVotes` reads this instead of looping `tokensOfOwner`.
+    mapping(address account => AccountPoint[]) private _accountPointHistory;
+    mapping(address account => mapping(uint256 weekStart => int128)) public accountSlopeChanges;
 
     mapping(uint256 weekStart => uint256) private _weekSupply;
     mapping(uint256 weekStart => bool) private _weekSupplyCached;
@@ -496,6 +507,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _globalCheckpoint();
     }
 
+    /// @notice Permissionless. Advances one account's weight history. A lock mutation reverts
+    ///         with `HistoryStale` until this has caught the account up to `block.timestamp`.
+    function checkpointAccount(address account) external {
+        _checkpointAccount(account);
+    }
+
     function _globalCheckpoint() internal {
         uint256 epoch_ = epoch;
         GlobalPoint memory last = pointHistory[epoch_];
@@ -609,6 +626,91 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
     }
 
+    /// @dev Same week-walk as `_globalCheckpoint`, but only this account's slope schedule.
+    function _checkpointAccount(address account) private {
+        AccountPoint[] storage history = _accountPointHistory[account];
+        uint256 len = history.length;
+        if (len == 0) {
+            history.push(AccountPoint({bias: 0, slope: 0, ts: block.timestamp.toUint64()}));
+            return;
+        }
+
+        AccountPoint memory last = history[len - 1];
+        if (last.ts == block.timestamp) {
+            return;
+        }
+
+        int128 bias = last.bias;
+        int128 slope = last.slope;
+        uint256 lastTs = last.ts;
+        uint256 ti = EpochTime.floorWeek(lastTs);
+
+        for (uint256 i = 0; i < MAX_WEEK_STEPS; ++i) {
+            ti += WEEK;
+            int128 dSlope = 0;
+            uint256 t = ti;
+            if (t > block.timestamp) {
+                t = block.timestamp;
+            } else {
+                dSlope = accountSlopeChanges[account][ti];
+            }
+
+            // forge-lint: disable-next-line(unsafe-typecast)
+            bias -= slope * int128(uint128(t - lastTs));
+            if (bias < 0) {
+                bias = 0;
+            }
+            slope += dSlope;
+            if (slope < 0) {
+                slope = 0;
+            }
+            lastTs = t;
+            history.push(AccountPoint({bias: bias, slope: slope, ts: t.toUint64()}));
+            if (t == block.timestamp) {
+                break;
+            }
+        }
+    }
+
+    /// @dev Per-account twin of `_applyLock`. Linearity makes the sum of accounts equal the global supply.
+    function _applyAccountLock(address account, uint128 amount, uint64 end, int128 sign) private {
+        if (end <= block.timestamp || amount == 0) {
+            return;
+        }
+        // forge-lint: disable-next-line(unsafe-typecast)
+        int128 slope = int128(uint128(amount / uint128(MAX_LOCK)));
+        if (slope == 0) {
+            return;
+        }
+
+        uint256 activation = uint256(end) - MAX_LOCK;
+        AccountPoint[] storage history = _accountPointHistory[account];
+        AccountPoint storage p = history[history.length - 1];
+
+        int128 biasDelta;
+        int128 slopeDelta;
+        if (activation <= block.timestamp) {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            biasDelta = slope * int128(uint128(uint256(end) - block.timestamp));
+            slopeDelta = slope;
+        } else {
+            // forge-lint: disable-next-line(unsafe-typecast)
+            biasDelta = slope * int128(uint128(MAX_LOCK));
+            slopeDelta = 0;
+            accountSlopeChanges[account][activation] += sign * slope;
+        }
+        accountSlopeChanges[account][uint256(end)] -= sign * slope;
+
+        p.bias += sign * biasDelta;
+        p.slope += sign * slopeDelta;
+        if (p.bias < 0) {
+            p.bias = 0;
+        }
+        if (p.slope < 0) {
+            p.slope = 0;
+        }
+    }
+
     /// @dev Every lock mutation funnels through here: advance history, swap the contribution,
     ///      record the new user point.
     function _rewriteLock(uint256 tokenId, Lock memory oldLock, Lock memory newLock) private {
@@ -617,8 +719,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert HistoryStale();
         }
 
+        address owner = ownerOf(tokenId);
+        _checkpointAccount(owner);
+        if (_accountPointHistory[owner][_accountPointHistory[owner].length - 1].ts != uint64(block.timestamp)) {
+            revert HistoryStale();
+        }
+
         _applyLock(oldLock.amount, oldLock.end, -1);
         _applyLock(newLock.amount, newLock.end, 1);
+        _applyAccountLock(owner, oldLock.amount, oldLock.end, -1);
+        _applyAccountLock(owner, newLock.amount, newLock.end, 1);
 
         _locked[tokenId] = newLock;
         _pushUserPoint(tokenId, newLock.amount, newLock.end);
@@ -635,6 +745,70 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function balanceOfNFT(uint256 tokenId) public view returns (uint256) {
         Lock memory lock = _locked[tokenId];
         return weightAt(lock.amount, lock.end, block.timestamp);
+    }
+
+    /// @notice Voting weight of every position `account` owns, at `block.timestamp`.
+    ///         O(weeks since the last checkpoint), not O(positions).
+    function weightOf(address account) external view returns (uint256) {
+        return weightOfAt(account, block.timestamp);
+    }
+
+    /// @notice Voting weight of `account` at `timestamp`. Same walk as `totalSupplyAt`.
+    function weightOfAt(address account, uint256 timestamp) public view returns (uint256) {
+        AccountPoint[] storage history = _accountPointHistory[account];
+        uint256 len = history.length;
+        if (len == 0 || history[0].ts > timestamp) {
+            return 0;
+        }
+
+        uint256 lo = 0;
+        uint256 hi = len - 1;
+        while (lo < hi) {
+            uint256 mid = (lo + hi + 1) / 2;
+            if (history[mid].ts <= timestamp) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        AccountPoint memory p = history[lo];
+        return _biasAt(p.bias, p.slope, p.ts, timestamp, account);
+    }
+
+    function _biasAt(int128 bias, int128 slope, uint256 lastTs, uint256 timestamp, address account)
+        private
+        view
+        returns (uint256)
+    {
+        if (lastTs > timestamp) {
+            return 0;
+        }
+        uint256 ti = EpochTime.floorWeek(lastTs);
+        for (uint256 i = 0; i < MAX_WEEK_STEPS; ++i) {
+            ti += WEEK;
+            int128 dSlope = 0;
+            uint256 t = ti;
+            if (t > timestamp) {
+                t = timestamp;
+            } else {
+                dSlope = accountSlopeChanges[account][ti];
+            }
+            // forge-lint: disable-next-line(unsafe-typecast)
+            bias -= slope * int128(uint128(t - lastTs));
+            if (bias < 0) {
+                return 0;
+            }
+            slope += dSlope;
+            if (slope < 0) {
+                slope = 0;
+            }
+            lastTs = t;
+            if (t == timestamp) {
+                break;
+            }
+        }
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint256(uint128(bias));
     }
 
     function balanceOfNFTAt(uint256 tokenId, uint256 timestamp) public view returns (uint256) {

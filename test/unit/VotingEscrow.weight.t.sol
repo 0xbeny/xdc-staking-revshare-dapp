@@ -74,6 +74,11 @@ contract VotingEscrowWeightTest is Base {
                 sum += escrow.balanceOfNFT(ids[i]);
             }
             assertEq(escrow.totalSupply(), sum, "global bias must equal the sum of positions");
+            assertEq(
+                escrow.weightOf(alice),
+                escrow.balanceOfNFT(ids[0]) + escrow.balanceOfNFT(ids[3]),
+                "account weight must equal the sum of that owner's positions"
+            );
         }
     }
 

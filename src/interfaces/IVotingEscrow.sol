@@ -41,6 +41,8 @@ interface IVotingEscrow {
 
     function balanceOfNFT(uint256 tokenId) external view returns (uint256);
     function balanceOfNFTAt(uint256 tokenId, uint256 timestamp) external view returns (uint256);
+    function weightOf(address account) external view returns (uint256);
+    function weightOfAt(address account, uint256 timestamp) external view returns (uint256);
     function totalSupply() external view returns (uint256);
     function totalSupplyAt(uint256 timestamp) external view returns (uint256);
     function totalSupplyAtWeek(uint256 weekStart) external view returns (uint256);
