@@ -166,6 +166,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Sum of the epoch-start weights of every position that exited during an epoch.
     mapping(uint256 epoch => uint256) public exitedWeightByEpoch;
+    /// @notice Weight removed from epochs that an early exit left unvested.
+    ///         The exit epoch itself stays in `exitedWeightByEpoch`.
+    mapping(uint256 epoch => uint256) public unvestedForfeitWeight;
 
     /// @notice Contract eligibility tiers (spec §3.1 #10). EOAs need no entry.
     mapping(address account => Tier) public tierOf;
@@ -1247,6 +1250,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 snapshotWeight = balanceOfNFTAt(tokenId, EpochTime.startOfEpoch(currentEpoch_));
         if (snapshotWeight > 0) {
             exitedWeightByEpoch[currentEpoch_] += snapshotWeight;
+        }
+        // Epoch `e` vests at `e + VESTING_EPOCHS`, so an exit in `x` can still touch only
+        // `[x - 7, x - 1]`. Epoch `x - 8` is already vested and must not be forfeited again.
+        uint256 lag = Constants.VESTING_EPOCHS - 1;
+        uint256 from = currentEpoch_ > lag ? currentEpoch_ - lag : 0;
+        for (uint256 past = from; past < currentEpoch_; ++past) {
+            uint256 weight = balanceOfNFTAt(tokenId, EpochTime.startOfEpoch(past));
+            if (weight > 0) {
+                unvestedForfeitWeight[past] += weight;
+            }
         }
         exitEpoch[tokenId] = currentEpoch_;
     }

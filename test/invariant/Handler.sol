@@ -18,6 +18,8 @@ import {MockWXDC} from "../mocks/MockWXDC.sol";
 contract Handler is CommonBase, StdCheats, StdUtils {
     uint256 internal constant WEEK = 7 days;
     uint256 internal constant MAX_LOCK = 104 weeks;
+    /// @dev Wider than the vesting window on purpose, so the check does not assume its size.
+    uint256 internal constant FORFEIT_LOOKBACK = 12;
 
     VotingEscrow public immutable ESCROW;
     ZapDepositor public immutable ZAP;
@@ -36,8 +38,9 @@ contract Handler is CommonBase, StdCheats, StdUtils {
     uint256 public ghostDeposited;
     uint256 public ghostWithdrawn;
     uint256 public ghostPenalised;
-    mapping(uint256 tokenId => uint256) public ghostMaxCursor;
+    mapping(uint256 tokenId => mapping(address token => uint256)) public ghostMaxCursor;
     uint256 public cursorViolations;
+    uint256 public forfeitedPaidViolations;
 
     constructor(
         VotingEscrow escrow_,
@@ -178,10 +181,30 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         }
 
         (uint256 returned, uint256 penalty,) = ESCROW.previewExit(tokenId);
+        uint256 exitEpoch = block.timestamp / WEEK;
+        uint256[FORFEIT_LOOKBACK] memory before;
+        for (uint256 k; k < FORFEIT_LOOKBACK; ++k) {
+            before[k] = ESCROW.unvestedForfeitWeight(exitEpoch - 1 - k);
+        }
+
         vm.prank(ESCROW.ownerOf(tokenId));
         ESCROW.emergencyExit(tokenId);
         ghostWithdrawn += returned;
         ghostPenalised += penalty;
+
+        // Any epoch this exit forfeited must be one the position has not been paid for.
+        for (uint256 k; k < FORFEIT_LOOKBACK; ++k) {
+            uint256 e = exitEpoch - 1 - k;
+            if (ESCROW.unvestedForfeitWeight(e) == before[k]) {
+                continue;
+            }
+            if (
+                DISTRIBUTOR.claimCursor(tokenId, address(USDC)) > e
+                    || DISTRIBUTOR.claimCursor(tokenId, address(WXDC)) > e
+            ) {
+                forfeitedPaidViolations++;
+            }
+        }
     }
 
     function notifyRevenue(uint256 tokenSeed, uint96 amount, bool useUsdc) external {
@@ -216,11 +239,11 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         DISTRIBUTOR.claim(tokenId, tokens);
 
         uint256 cursor = DISTRIBUTOR.claimCursor(tokenId, token);
-        if (cursor < ghostMaxCursor[tokenId]) {
+        if (cursor < ghostMaxCursor[tokenId][token]) {
             cursorViolations++;
         }
-        if (cursor > ghostMaxCursor[tokenId]) {
-            ghostMaxCursor[tokenId] = cursor;
+        if (cursor > ghostMaxCursor[tokenId][token]) {
+            ghostMaxCursor[tokenId][token] = cursor;
         }
     }
 

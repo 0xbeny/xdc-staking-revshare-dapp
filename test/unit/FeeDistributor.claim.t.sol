@@ -24,6 +24,7 @@ contract FeeDistributorClaimTest is Base {
             escrow.keepAtMaxLock(a);
             _nextEpoch();
         }
+        _vest();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -52,6 +53,7 @@ contract FeeDistributorClaimTest is Base {
     function test_repeatedClaimsAreIdempotent() public {
         _notifyExact(address(usdc), 1000e6);
         _nextEpoch();
+        _vest();
 
         assertEq(_claim(alice, a, address(usdc)), 1000e6);
         assertEq(_claim(alice, a, address(usdc)), 0, "a second claim pays nothing");
@@ -63,6 +65,7 @@ contract FeeDistributorClaimTest is Base {
             _notifyExact(address(usdc), 100e6);
             _nextEpoch();
         }
+        _vest();
         uint256 before = distributor.claimCursor(a, address(usdc));
         _claim(alice, a, address(usdc));
         uint256 mid = distributor.claimCursor(a, address(usdc));
@@ -77,6 +80,7 @@ contract FeeDistributorClaimTest is Base {
 
         uint256 before = usdc.balanceOf(alice);
         // A third party triggers the claim; funds still go to the position's recipient.
+        _vest();
         _claim(carol, a, address(usdc));
         assertEq(usdc.balanceOf(alice) - before, 1000e6);
     }
@@ -89,6 +93,7 @@ contract FeeDistributorClaimTest is Base {
         _nextEpoch();
 
         uint256 before = usdc.balanceOf(carol);
+        _vest();
         _claim(alice, a, address(usdc));
         assertEq(usdc.balanceOf(carol) - before, 1000e6);
     }
@@ -106,6 +111,7 @@ contract FeeDistributorClaimTest is Base {
         _notifyExact(address(usdc), 1000e6);
         _notifyExact(address(wxdc), 5 ether);
         _nextEpoch();
+        _vest();
 
         address[] memory tokens = new address[](2);
         tokens[0] = address(usdc);
@@ -120,6 +126,7 @@ contract FeeDistributorClaimTest is Base {
     function test_claimAndLockFoldsRewardsBackIntoThePosition() public {
         _notifyExact(address(wxdc), 500 ether);
         _nextEpoch();
+        _vest();
 
         uint256 principalBefore = escrow.locked(a).amount;
         vm.prank(alice);
@@ -138,6 +145,7 @@ contract FeeDistributorClaimTest is Base {
         _nextEpoch();
 
         assertLe(escrow.locked(short_).end, block.timestamp, "setup: expired");
+        _vest();
         uint256 before = wxdc.balanceOf(bob);
         vm.prank(bob);
         uint256 amount = distributor.claimAndLock(short_);
@@ -168,6 +176,7 @@ contract FeeDistributorClaimTest is Base {
             _notifyExact(address(usdc), 250e6);
             _nextEpoch();
         }
+        _vest();
         distributor.settle(address(usdc), 52);
 
         (uint256 expected,) = distributor.claimable(a, address(usdc));
@@ -203,6 +212,7 @@ contract FeeDistributorClaimTest is Base {
             _nextEpoch();
         }
 
+        _vest();
         _claim(alice, a, address(usdc));
         _claim(bob, b, address(usdc));
 

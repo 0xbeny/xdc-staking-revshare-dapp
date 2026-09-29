@@ -21,6 +21,7 @@ contract FeeDistributorEpochTest is Base {
         assertEq(pending, 0, "an open epoch is never claimable");
 
         _nextEpoch();
+        _vest();
         assertEq(_claim(alice, a, address(usdc)), 10_000e6, "sole locker takes the whole pot");
     }
 
@@ -34,6 +35,7 @@ contract FeeDistributorEpochTest is Base {
         uint256 b = _lock(bob, 100_000 ether, 52 weeks);
         _notifyExact(address(usdc), 10_000e6);
         _nextEpoch();
+        _vest();
 
         assertEq(_claim(alice, a, address(usdc)), 10_000e6, "alice takes the whole epoch");
         assertEq(_claim(bob, b, address(usdc)), 0, "bob was not in the snapshot");
@@ -63,6 +65,7 @@ contract FeeDistributorEpochTest is Base {
 
         _notifyExact(address(usdc), 4000e6);
         _nextEpoch();
+        _vest();
 
         uint256 gotAlice = _claim(alice, a, address(usdc));
         uint256 gotBob = _claim(bob, b, address(usdc));
@@ -80,6 +83,7 @@ contract FeeDistributorEpochTest is Base {
 
         _notifyExact(address(usdc), 10_000e6);
         _nextEpoch();
+        _vest();
 
         assertGt(_claim(alice, long_, address(usdc)), _claim(bob, short_, address(usdc)) * 20);
     }
@@ -107,6 +111,7 @@ contract FeeDistributorEpochTest is Base {
         assertEq(distributor.carryForwardMovements(address(usdc)), 10_000e6);
         assertEq(distributor.totalNotified(address(usdc)), 5000e6, "carry-forward moves value, it never mints it");
 
+        _vest();
         assertEq(_claim(alice, a, address(usdc)), 5000e6, "nothing stranded, nothing swept to treasury");
     }
 
@@ -124,6 +129,7 @@ contract FeeDistributorEpochTest is Base {
         _nextEpoch();
 
         distributor.settle(address(usdc), 52);
+        _vest();
         assertEq(_claim(alice, a, address(usdc)), 6000e6, "all three empty epochs chained forward");
     }
 
@@ -181,6 +187,7 @@ contract FeeDistributorEpochTest is Base {
 
         vm.prank(timelock);
         distributor.unpause();
+        _vest();
         assertEq(_claim(alice, a, address(usdc)), 1000e6);
     }
 

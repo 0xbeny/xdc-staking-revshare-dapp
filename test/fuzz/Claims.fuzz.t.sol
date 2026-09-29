@@ -19,6 +19,7 @@ contract ClaimsFuzzTest is Base {
             _notifyExact(address(usdc), 100e6);
             _nextEpoch();
         }
+        _vest();
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
@@ -97,6 +98,7 @@ contract ClaimsFuzzTest is Base {
             _nextEpoch();
         }
 
+        _vest();
         uint256 first = _claim(alice, a, address(usdc));
         vm.warp(block.timestamp + bound(delay, 0, 10 weeks));
         assertEq(_claim(alice, a, address(usdc)), 0, "no revenue means no payout, however long we wait");
@@ -127,6 +129,7 @@ contract ClaimsFuzzTest is Base {
             _nextEpoch();
         }
 
+        _vest();
         _claim(alice, a, address(usdc));
         assertLe(distributor.claimCursor(a, address(usdc)), exitEpoch, "the cursor stops at the exit epoch");
 

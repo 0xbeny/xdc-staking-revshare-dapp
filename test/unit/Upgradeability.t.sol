@@ -31,6 +31,7 @@ contract UpgradeabilityTest is Base {
         assertEq(address(distributor.escrow()), address(escrow));
 
         _nextEpoch();
+        _vest();
         assertEq(_claim(alice, a, address(usdc)), 1000e6);
     }
 

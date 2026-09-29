@@ -68,7 +68,9 @@ contract UserJourneyTest is Base {
             escrow.balanceOfNFT(position) * 1e18 / escrow.totalSupply(), 0.002e18, 0.05e18, "~0.2% share held"
         );
 
-        // 4. Receiving: one cursor-bounded claim covers the whole ten-week backlog.
+        // 4. Receiving: one cursor-bounded claim covers the whole ten-week backlog
+        //    once those weeks have vested.
+        _vest();
         address[] memory tokens = new address[](2);
         tokens[0] = address(usdc);
         tokens[1] = address(wxdc);
@@ -136,6 +138,7 @@ contract UserJourneyTest is Base {
 
         _notifyExact(address(usdc), 10_000e6);
         _nextEpoch();
+        _vest();
 
         uint256 shortEarned = _claim(alice, shortP, address(usdc));
         uint256 longEarned = _claim(alice, longP, address(usdc));
