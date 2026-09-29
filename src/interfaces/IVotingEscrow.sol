@@ -36,6 +36,7 @@ interface IVotingEscrow {
     function firstEligibleEpoch(uint256 tokenId) external view returns (uint256);
     function exitEpoch(uint256 tokenId) external view returns (uint256);
     function exitedWeightByEpoch(uint256 epoch) external view returns (uint256);
+    function unvestedForfeitWeight(uint256 epoch) external view returns (uint256);
     function autoExtend(uint256 tokenId) external view returns (bool);
     function setAutoExtend(uint256 tokenId, bool enabled) external;
 

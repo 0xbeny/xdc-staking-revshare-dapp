@@ -133,6 +133,7 @@ contract FeeDistributorKeeperTest is Base {
     function test_autoCompoundRunsPostBoundaryAndEarnsFromTheNextSnapshot() public {
         _notifyExact(address(wxdc), 500 ether);
         _nextEpoch();
+        _vest();
 
         uint256 epoch = _currentEpoch();
         uint256 principalBefore = escrow.locked(a).amount;

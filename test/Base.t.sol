@@ -198,6 +198,11 @@ abstract contract Base is Test {
         vm.warp(_epochStart(_currentEpoch() + 1) + 1);
     }
 
+    /// @dev Move far enough that a just-closed epoch has finished vesting.
+    function _vest() internal {
+        _warpEpochs(distributor.VESTING_EPOCHS());
+    }
+
     function _warpEpochs(uint256 n) internal {
         for (uint256 i; i < n; ++i) {
             _nextEpoch();

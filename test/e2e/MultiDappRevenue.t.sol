@@ -58,6 +58,7 @@ contract MultiDappRevenueTest is Base {
         assertEq(usdc.balanceOf(address(feeSafeB3)), 0, "B3 fee Safe swept to zero");
 
         _nextEpoch();
+        _vest();
         uint256 gotA = _claim(alice, a, address(usdc));
         uint256 gotB = _claim(bob, b, address(usdc));
         assertApproxEqAbs(gotA + gotB, expected, 4, "the epoch is fully distributed");

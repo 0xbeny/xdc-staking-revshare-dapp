@@ -35,6 +35,7 @@ contract FeeDistributorForfeitureTest is Base {
 
         _nextEpoch();
         _nextEpoch();
+        _vest();
         assertEq(_claim(bob, b, address(wxdc)), credited, "the remaining locker takes it all");
     }
 
@@ -53,8 +54,10 @@ contract FeeDistributorForfeitureTest is Base {
         // Epoch n-1: revenue that finalizes before the exit.
         _notifyExact(address(usdc), 1000e6);
         _nextEpoch();
+        _vest();
 
         // Epoch n: revenue accrues, then alice exits mid-epoch.
+        // The previous epoch has finished vesting, so she keeps it. The open one has not.
         _notifyExact(address(usdc), 1000e6);
         uint256 exitEpoch = _currentEpoch();
         vm.prank(alice);
@@ -69,6 +72,7 @@ contract FeeDistributorForfeitureTest is Base {
         assertEq(distributor.exitForfeitMovements(address(usdc)), 500e6);
 
         _nextEpoch();
+        _vest();
         // Bob gets his own half of epoch n plus alice's forfeited half.
         assertApproxEqAbs(_claim(bob, b, address(usdc)), 500e6 + 500e6 + 500e6, 4);
     }
@@ -112,7 +116,7 @@ contract FeeDistributorForfeitureTest is Base {
         uint256 syncedInto = _currentEpoch() + 1;
         assertGt(distributor.epochRevenue(address(wxdc), syncedInto), 0, "credited, not stranded");
 
-        _warpEpochs(2);
+        _warpEpochs(distributor.VESTING_EPOCHS() + 1);
         assertGt(_claim(bob, b, address(wxdc)), 0, "recovered in full on the next round");
     }
 

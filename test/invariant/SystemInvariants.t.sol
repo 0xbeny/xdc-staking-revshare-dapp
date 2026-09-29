@@ -36,6 +36,34 @@ contract SystemInvariantsTest is Base {
         targetContract(address(handler));
     }
 
+    /// @dev Solvency over the whole run: once everything has vested, every position can claim
+    ///      everything it was promised. Over-promising shows up as a claim that cannot be paid.
+    function afterInvariant() external {
+        vm.warp(block.timestamp + (distributor.VESTING_EPOCHS() + 2) * WEEK);
+        address[2] memory tokens = [address(usdc), address(wxdc)];
+        uint256 n = handler.tokenIdCount();
+        for (uint256 round; round < 3; ++round) {
+            for (uint256 t; t < 2; ++t) {
+                address[] memory one = new address[](1);
+                one[0] = tokens[t];
+                for (uint256 i; i < n; ++i) {
+                    uint256 tokenId = handler.tokenIds(i);
+                    uint256 left = 1;
+                    for (uint256 page; page < 8 && left > 0; ++page) {
+                        vm.prank(escrow.ownerOf(tokenId));
+                        (, left) = distributor.claim(tokenId, one);
+                    }
+                }
+            }
+            // Forfeits copied during this round land one epoch ahead and vest again.
+            vm.warp(block.timestamp + (distributor.VESTING_EPOCHS() + 2) * WEEK);
+        }
+        for (uint256 t; t < 2; ++t) {
+            assertLe(distributor.totalClaimed(tokens[t]), distributor.totalNotified(tokens[t]), "never over-paid");
+            assertGe(_balanceOf(tokens[t], address(distributor)), distributor.accounted(tokens[t]), "still solvent");
+        }
+    }
+
     /// @dev Principal safety: every unit of principal the escrow still owes is still held by it.
     function invariant_escrowHoldsExactlyItsOutstandingPrincipal() public view {
         assertEq(wxdc.balanceOf(address(escrow)), escrow.totalLocked());
@@ -106,17 +134,22 @@ contract SystemInvariantsTest is Base {
         uint256 current = _currentEpoch();
         uint256 from = current > 60 ? current - 60 : 0;
         for (uint256 e = from; e <= current; ++e) {
-            uint256 exited = escrow.exitedWeightByEpoch(e);
-            if (exited == 0) {
-                continue;
-            }
-            assertLe(exited, escrow.totalSupplyAtWeek(_epochStart(e)));
+            uint256 supply = escrow.totalSupplyAtWeek(_epochStart(e));
+            assertLe(escrow.exitedWeightByEpoch(e), supply);
+            assertLe(escrow.unvestedForfeitWeight(e), supply);
+            assertLe(escrow.exitedWeightByEpoch(e) + escrow.unvestedForfeitWeight(e), supply);
         }
     }
 
     /// @dev Claim cursors are monotonic: no epoch is ever replayed.
     function invariant_claimCursorsAreMonotonic() public view {
         assertEq(handler.cursorViolations(), 0);
+    }
+
+    /// @dev An early exit only forfeits epochs the position has not been paid for yet.
+    ///      Otherwise the same share is paid to the leaver and again to the stayers.
+    function invariant_forfeitedEpochsWereNeverPaid() public view {
+        assertEq(handler.forfeitedPaidViolations(), 0);
     }
 
     /// @dev Settled epochs are always strictly in the past.

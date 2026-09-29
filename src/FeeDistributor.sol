@@ -51,6 +51,9 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     uint256 public constant WEEK = Constants.WEEK;
     /// @notice Hard bound on epochs walked per claim call. No unbounded loop exists anywhere.
     uint256 public constant MAX_EPOCHS_PER_CLAIM = 52;
+    /// @notice A week's yield is claimable only after this many later epochs.
+    ///         Early exit forfeits the weeks that have not finished the wait.
+    uint256 public constant VESTING_EPOCHS = Constants.VESTING_EPOCHS;
     /// @notice Pre-boundary keeper window (§5): the last two hours of an epoch.
     uint256 public constant KEEPER_WINDOW = 2 hours;
 
@@ -100,10 +103,16 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     mapping(uint256 tokenId => address) public recipientOf;
     mapping(uint256 tokenId => bool) public autoCompound;
 
+    /// @notice Next epoch whose unvested forfeiture has been copied for this token.
+    ///         An epoch is copied once `current >= epoch + VESTING_EPOCHS`, after which
+    ///         no later exit can add weight to it.
+    mapping(address token => uint256) public unvestedForfeitCursor;
+
     // Reserved storage for future upgrades; intentionally never read.
+    // One slot of the original gap now holds `appliedUnvestedForfeit`.
     // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
     // slither-disable-next-line unused-state
-    uint256[40] private __gap;
+    uint256[39] private __gap;
     // forge-lint: disable-end(mixed-case-variable, unused-state-variables)
 
     /*//////////////////////////////////////////////////////////////
@@ -340,6 +349,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
 
         settledEpoch[token] = cursor;
+        _harvestUnvested(token);
         return cursor;
     }
 
@@ -472,6 +482,10 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         uint256 cursor = _cursor(tokenId, token);
         uint256 finalEpoch = _finalEpoch(tokenId);
         uint256 limit = settledEpoch[token];
+        uint256 claimEnd = _claimEnd(tokenId);
+        if (claimEnd < limit) {
+            limit = claimEnd;
+        }
         if (finalEpoch < limit) {
             limit = finalEpoch;
         }
@@ -493,12 +507,66 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
         newCursor = cursor;
 
-        // Closed epochs are `[start, currentEpoch)`. The open epoch is never claimable.
-        uint256 closedEnd = EpochTime.currentEpoch();
+        // Only vested epochs count as a backlog. The open epoch and the vesting window do not.
+        uint256 closedEnd = _claimEnd(tokenId);
         if (finalEpoch < closedEnd) {
             closedEnd = finalEpoch;
         }
         remaining = closedEnd > cursor ? closedEnd - cursor : 0;
+    }
+
+    /// @dev Exclusive end of the epochs this position may claim.
+    ///      Still open (or matured): every epoch that has finished `VESTING_EPOCHS`.
+    ///      Early exit: only epochs that vested strictly before `exitEpoch`.
+    function _claimEnd(uint256 tokenId) internal view returns (uint256) {
+        uint256 current = EpochTime.currentEpoch();
+        uint256 vestedEnd = current + 1 > VESTING_EPOCHS ? current + 1 - VESTING_EPOCHS : 0;
+        uint256 exit = escrow.exitEpoch(tokenId);
+        if (exit == 0) {
+            return vestedEnd;
+        }
+        uint256 earlyEnd = exit > VESTING_EPOCHS - 1 ? exit - (VESTING_EPOCHS - 1) : 0;
+        return earlyEnd < vestedEnd ? earlyEnd : vestedEnd;
+    }
+
+    /// @dev Copy unvested slices once they can no longer change. Walks a cursor, not a
+    ///      sliding window, so a late settle still reaches an exit from long ago.
+    function _harvestUnvested(address token) internal {
+        uint256 current = EpochTime.currentEpoch();
+        uint256 cursor = unvestedForfeitCursor[token];
+        if (cursor < startEpoch) {
+            cursor = startEpoch;
+        }
+        uint256 settled = settledEpoch[token];
+        uint256 processed = 0;
+        while (cursor + VESTING_EPOCHS <= current && cursor < settled && processed < MAX_EPOCHS_PER_CLAIM) {
+            _creditUnvested(token, cursor, current + 1);
+            unchecked {
+                ++cursor;
+                ++processed;
+            }
+        }
+        unvestedForfeitCursor[token] = cursor;
+    }
+
+    /// @dev Move this epoch's `unvestedForfeitWeight` forward. Does not shrink `pot`.
+    function _creditUnvested(address token, uint256 epoch, uint256 dest) internal returns (uint256 moved) {
+        uint256 weight = escrow.unvestedForfeitWeight(epoch);
+        if (weight == 0) {
+            return 0;
+        }
+        uint256 supply =
+            epochSupplyCached[epoch] ? epochSupply[epoch] : escrow.totalSupplyAtWeek(EpochTime.startOfEpoch(epoch));
+        uint256 pot = epochRevenue[token][epoch];
+        if (supply == 0 || pot == 0 || weight > supply) {
+            return 0;
+        }
+        moved = (pot * weight) / supply;
+        if (moved == 0) {
+            return 0;
+        }
+        epochRevenue[token][dest] += moved;
+        exitForfeitMovements[token] += moved;
     }
 
     function _cursor(uint256 tokenId, address token) internal view returns (uint256) {
