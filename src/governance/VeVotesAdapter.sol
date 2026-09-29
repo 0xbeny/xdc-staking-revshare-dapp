@@ -11,8 +11,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 ///      soulbound and per-tokenId. `delegate` reverts rather than silently no-op'ing.
 ///
 ///      Compatibility profile: timestamp clock; no delegation; `getPastVotes` /
-///      `getPastTotalSupply` revert for `timepoint >= clock()` (ERC-5805). Gas scales with
-///      `tokensOfOwner.length` — keep position cardinality bounded (gift opt-in + min amount).
+///      `getPastTotalSupply` revert for `timepoint >= clock()` (ERC-5805). Voting weight is
+///      the escrow's per-account checkpoint, so gas does not grow with `tokensOfOwner`.
 contract VeVotesAdapter is IVotes {
     IVotingEscrow public immutable ESCROW;
 
@@ -37,19 +37,13 @@ contract VeVotesAdapter is IVotes {
         return "mode=timestamp";
     }
 
-    function getVotes(address account) external view returns (uint256 total) {
-        uint256[] memory ids = ESCROW.tokensOfOwner(account);
-        for (uint256 i = 0; i < ids.length; ++i) {
-            total += ESCROW.balanceOfNFT(ids[i]);
-        }
+    function getVotes(address account) external view returns (uint256) {
+        return ESCROW.weightOf(account);
     }
 
-    function getPastVotes(address account, uint256 timepoint) external view returns (uint256 total) {
+    function getPastVotes(address account, uint256 timepoint) external view returns (uint256) {
         _requirePastTimepoint(timepoint);
-        uint256[] memory ids = ESCROW.tokensOfOwner(account);
-        for (uint256 i = 0; i < ids.length; ++i) {
-            total += ESCROW.balanceOfNFTAt(ids[i], timepoint);
-        }
+        return ESCROW.weightOfAt(account, timepoint);
     }
 
     function getPastTotalSupply(uint256 timepoint) external view returns (uint256) {

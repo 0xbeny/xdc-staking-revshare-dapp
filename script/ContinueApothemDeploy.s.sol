@@ -29,6 +29,7 @@ contract ContinueApothemDeploy is Script {
         address registryImpl = vm.envAddress("REVENUE_REGISTRY_IMPL");
 
         vm.startBroadcast();
+        // forge-lint: disable-next-line(unused-return)
         (, address deployer,) = vm.readCallers();
 
         FeeDistributor distributorImpl = new FeeDistributor();

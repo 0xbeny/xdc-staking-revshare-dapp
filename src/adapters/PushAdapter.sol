@@ -38,6 +38,7 @@ contract PushAdapter is RevenueAdapterBase {
         uint256 balance = IERC20(token).balanceOf(address(this));
 
         IERC20(token).forceApprove(DISTRIBUTOR, balance);
+        // forge-lint: disable-next-line(reentrancy-no-eth)
         IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, balance);
         emit RevenuePushed(token, balance);
     }
