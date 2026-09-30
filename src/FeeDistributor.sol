@@ -55,7 +55,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     ///         Early exit forfeits the weeks that have not finished the wait.
     uint256 public constant VESTING_EPOCHS = Constants.VESTING_EPOCHS;
     /// @notice Pre-boundary keeper window (§5): the last two hours of an epoch.
-    uint256 public constant KEEPER_WINDOW = 2 hours;
+    uint256 public constant KEEPER_WINDOW = Constants.KEEPER_WINDOW;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE

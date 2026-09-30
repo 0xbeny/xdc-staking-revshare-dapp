@@ -20,6 +20,7 @@ contract FeeDistributorClaimTest is Base {
         escrow.setAutoExtend(a, true);
         for (uint256 i; i < 60; ++i) {
             _notifyExact(address(usdc), 100e6);
+            _intoKeeperWindow();
             vm.prank(alice);
             escrow.keepAtMaxLock(a);
             _nextEpoch();

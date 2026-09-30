@@ -86,8 +86,10 @@ contract WeightFuzzTest is Base {
         escrow.increaseAmount(tokenId, add);
         uint256 afterIncrease = escrow.balanceOfNFT(tokenId);
         escrow.setAutoExtend(tokenId, true);
-        escrow.keepAtMaxLock(tokenId);
         vm.stopPrank();
+        _intoKeeperWindow();
+        vm.prank(alice);
+        escrow.keepAtMaxLock(tokenId);
 
         assertGe(afterIncrease, before);
         assertGe(escrow.balanceOfNFT(tokenId), afterIncrease);

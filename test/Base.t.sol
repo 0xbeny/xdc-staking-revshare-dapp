@@ -193,6 +193,11 @@ abstract contract Base is Test {
         return epoch * WEEK;
     }
 
+    /// @dev Last hour of the current epoch, inside the keeper window.
+    function _intoKeeperWindow() internal {
+        vm.warp(_epochStart(_currentEpoch() + 1) - 1 hours);
+    }
+
     /// @dev Warps to the start of the next epoch, plus one second.
     function _nextEpoch() internal {
         vm.warp(_epochStart(_currentEpoch() + 1) + 1);

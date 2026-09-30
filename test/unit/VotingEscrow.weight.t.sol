@@ -133,6 +133,7 @@ contract VotingEscrowWeightTest is Base {
 
         vm.prank(alice);
         escrow.setAutoExtend(tokenId, true);
+        _intoKeeperWindow();
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
         // forge-lint: disable-next-line(divide-before-multiply)

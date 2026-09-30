@@ -278,6 +278,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error CooldownActive(uint256 readyAt);
     error LockMaturesDuringCooldown();
     error NotOptedIn();
+    error OutsideKeeperWindow();
 
     /*//////////////////////////////////////////////////////////////
                               CONSTRUCTOR
@@ -1038,11 +1039,16 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _applyUnlockTime(tokenId, oldLock, newUnlock);
     }
 
-    /// @notice Re-extend to the maximum. Permissionless if `autoExtend[tokenId]` is set.
+    /// @notice Re-extend to the maximum. Permissionless if `autoExtend[tokenId]` is set,
+    ///         and only in the last `Constants.KEEPER_WINDOW` before the next epoch.
     ///         Owner one-shot max-extend uses `increaseUnlockTime`, not this.
     function keepAtMaxLock(uint256 tokenId) external nonReentrant {
         if (!autoExtend[tokenId]) {
             revert NotOptedIn();
+        }
+        uint256 epochEnd = EpochTime.startOfEpoch(EpochTime.currentEpoch() + 1);
+        if (block.timestamp + Constants.KEEPER_WINDOW < epochEnd) {
+            revert OutsideKeeperWindow();
         }
         _requireNoExitRequest(tokenId);
         (, Lock memory oldLock) = _openLockOf(tokenId);

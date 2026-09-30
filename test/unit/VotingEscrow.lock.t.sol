@@ -178,6 +178,10 @@ contract VotingEscrowLockTest is Base {
 
         vm.prank(alice);
         escrow.setAutoExtend(tokenId, true);
+        vm.expectRevert(VotingEscrow.OutsideKeeperWindow.selector);
+        escrow.keepAtMaxLock(tokenId);
+
+        vm.warp(_epochStart(_currentEpoch() + 1) - 1 hours);
         escrow.keepAtMaxLock(tokenId);
         assertGt(escrow.locked(tokenId).end, block.timestamp + 100 weeks);
 
