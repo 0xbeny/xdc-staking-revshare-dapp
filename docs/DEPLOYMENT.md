@@ -12,8 +12,8 @@ Chain id **50** (mainnet), **51** (Apothem testnet). Explorer: xdcscan.
 | `KEEPER` | The Hermes signer. Holds `KEEPER_ROLE` on the distributor target in `SystemAccess` only. |
 | `WXDC` | The canonical wrapped-XDC contract. **Verify it against the official XDC Network documentation** — the script checks it is a contract with 18 decimals, nothing more. |
 | `REWARD_TOKENS` | Comma-separated. Launch: WXDC and USDC. |
-| `MAX_PENALTY_BPS` | Launch value ≤ 5000 (hard clamp). Spec suggests 5000. |
-| `PENALTY_SPLIT_BPS` | Treasury share of a penalty, ≤ 5000. Spec suggests 2000 (80/20). |
+| `MAX_PENALTY_BPS` | Launch value ≤ 5000 (hard clamp). Governance can only lower it later. Spec suggests 5000. |
+| `PENALTY_SPLIT_BPS` | Treasury share of a penalty, ≤ 5000. Governance can only lower it later. Spec suggests 2000 (80/20). |
 | Signer | Hardware wallet (`--ledger`/`--trezor`) or an encrypted keystore (`cast wallet import`). **Never** a raw private key in `.env` for mainnet. |
 | Gas | Enough XDC on the deployer for ~15M gas of deployments. |
 

@@ -187,7 +187,7 @@ Principal leaves the vault through exactly two functions:
 Both are **two-phase** with a governance-tunable cooldown (default 24 hours, hard-capped at
 7 days): a first call arms the request; after the cooldown, a second call pays out. The
 penalty is snapshotted at request time, and a pending request blocks any modification of the
-position. The cooldown gives monitoring a reaction window against key theft without ever
+position. An early exit still pending when the lock matures pays out like a withdraw. The cooldown gives monitoring a reaction window against key theft without ever
 giving governance a veto — no role can block or confiscate a legitimate exit.
 
 ### 5.2 Penalty formula
@@ -365,8 +365,8 @@ contract-eligibility checks are a protocol-support policy, not a cryptographic g
 ## 8. Governance
 
 Governance (a multisig maturing into a timelock) operates strictly within immutable clamps:
-it can tune the penalty cap (≤ 50%), the penalty split (treasury ≤ 50%), the exit cooldown
-(≤ 7 days), whitelist adapters, and upgrade the two peripheral contracts after a timelock
+it can lower the penalty cap (≤ 50%) and the penalty split (treasury ≤ 50%), tune the exit
+cooldown (≤ 7 days), whitelist adapters, and upgrade the two peripheral contracts after a timelock
 delay. It cannot mint positions, move principal, alter the weight formula, or change penalty
 destinations.
 

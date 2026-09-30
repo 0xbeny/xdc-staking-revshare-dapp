@@ -113,6 +113,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     mapping(address token => uint256) public tokenAddedEpoch;
 
     // Reserved storage for future upgrades; intentionally never read.
+    // Two slots of the original 40 now hold `unvestedForfeitCursor` and `tokenAddedEpoch`.
     // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
     // slither-disable-next-line unused-state
     uint256[38] private __gap;
