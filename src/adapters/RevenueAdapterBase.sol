@@ -104,9 +104,9 @@ abstract contract RevenueAdapterBase is Context, ReentrancyGuard {
 
         uint256 held = pending + fresh;
         if (held > 0 && IFeeDistributor(DISTRIBUTOR).canNotifyRevenue(address(this), token)) {
+            pendingCommitted[token] = 0;
             IERC20(token).forceApprove(DISTRIBUTOR, held);
             IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, held);
-            pendingCommitted[token] = 0;
             committed = held;
         } else {
             pendingCommitted[token] = held;
