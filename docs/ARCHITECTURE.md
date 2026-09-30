@@ -37,7 +37,7 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 | `FeeDistributor` | UUPS | revenue awaiting claim | weekly epoch accounting and claims |
 | `RevenueRegistry` | UUPS | never | which adapters may notify, and their terms |
 | `PushAdapter` (A) | immutable | never between calls | dApp pushes committed revenue |
-| `FeeSplitter` (B) | immutable | never between calls | dApp's fee receiver; anyone skims |
+| `FeeSplitter` (B) | immutable | committed share only while the distributor will not take it | dApp's fee receiver; anyone skims |
 | `PullAdapter` (B2) | immutable | never between calls | sweeps a dedicated fee Safe by allowance |
 | `ZodiacFeeModule` (B3) | immutable | never between calls | sweeps a dedicated fee Safe as a Safe module |
 | `Attestor` (C) | immutable | never between calls | atomic epoch attestations by a reporter |

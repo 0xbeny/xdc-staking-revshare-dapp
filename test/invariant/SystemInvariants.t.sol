@@ -176,7 +176,7 @@ contract SystemInvariantsTest is Base {
     function invariant_adaptersHoldNoBalance() public view {
         assertEq(usdc.balanceOf(address(pusher)), 0);
         assertEq(wxdc.balanceOf(address(pusher)), 0);
-        assertEq(usdc.balanceOf(address(splitter)), 0);
+        assertEq(usdc.balanceOf(address(splitter)), splitter.pendingCommitted(address(usdc)));
         assertEq(usdc.balanceOf(address(attestor)), 0);
     }
 

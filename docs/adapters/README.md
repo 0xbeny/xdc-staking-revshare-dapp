@@ -46,6 +46,6 @@ epoch is settled. See [INTEGRATION.md](../INTEGRATION.md) and [ARCHITECTURE.md](
 
 ## Lifecycle (all modes)
 
-- **Deactivate:** `registry.deactivateAdapter(adapter)` — stops new notifies; past revenue stays claimable.
+- **Deactivate:** `registry.deactivateAdapter(adapter)` — stops new notifies; past revenue stays claimable. A splitter's unsent locker share stays in the splitter until the adapter is active again.
 - **Change terms:** deploy new adapter → register → deactivate old; retarget fee receiver / Safe / pushes.
 - **Metadata only:** `registry.updateTerms(adapter, termsHash, version)` does not change on-chain behaviour.

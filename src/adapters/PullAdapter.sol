@@ -35,7 +35,10 @@ contract PullAdapter is RevenueAdapterBase {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(FEE_SAFE);
         if (balance == 0) {
-            revert NothingToSkim();
+            if (pendingCommitted[token] == 0) {
+                revert NothingToSkim();
+            }
+            return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
         }
 
         // Mode B2 by design (spec §3.2): the *immutable* fee Safe granted this *immutable* adapter

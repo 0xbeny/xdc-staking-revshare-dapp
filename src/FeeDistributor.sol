@@ -245,6 +245,11 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Called by a registered, active adapter. Attribution is the *receipt* epoch.
+    /// @notice True when `notifyRevenue` from `adapter` for `token` would pass its gates.
+    function canNotifyRevenue(address adapter, address token) public view returns (bool) {
+        return !paused() && registry.isActiveAdapter(adapter) && isRewardToken[token] && acceptingRevenue[token];
+    }
+
     function notifyRevenue(address token, uint256 amount) external nonReentrant whenNotPaused {
         if (!registry.isActiveAdapter(_msgSender())) {
             revert NotAnActiveAdapter();
