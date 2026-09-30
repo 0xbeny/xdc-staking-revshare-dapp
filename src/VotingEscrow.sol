@@ -1102,32 +1102,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @notice Starts an early exit. Penalty is snapshotted now; funds move after cooldown via `emergencyExit`.
+    ///         Reverts when the lock would mature before the cooldown ends.
     function requestEmergencyExit(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
             revert NotAuthorized();
         }
-        if (lock.end <= block.timestamp) {
-            revert LockNotExpired();
-        }
-        if (lock.end - block.timestamp <= withdrawalCooldown) {
-            revert LockMaturesDuringCooldown();
-        }
-        if (exitRequest[tokenId].kind != ExitKind.None) {
-            revert ExitPending();
-        }
-
-        ExitQuote memory q = _quoteExit(lock);
-        uint64 readyAt = _readyAtFromNow();
-        exitRequest[tokenId] = ExitRequest({
-            readyAt: readyAt,
-            kind: ExitKind.Emergency,
-            returned: q.returned.toUint128(),
-            toLockers: q.toLockers.toUint128(),
-            toTreasury: q.toTreasury.toUint128(),
-            penaltyBps: q.penaltyBps.toUint64()
-        });
-        emit ExitRequested(tokenId, ExitKind.Emergency, readyAt);
+        _armEmergencyExit(tokenId, lock);
     }
 
     /// @notice Cancels a pending exit request. Lock terms are unchanged.
@@ -1170,19 +1151,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
 
         _requireCooldownElapsed(req.readyAt);
-
-        uint256 amount = lock.amount;
-        delete exitRequest[tokenId];
-        _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
-        closed[tokenId] = true;
-        totalLocked -= amount;
-
-        IERC20(token).safeTransfer(owner, amount);
-        emit Withdraw(tokenId, owner, amount);
+        _payOutMature(tokenId, owner, lock);
     }
 
     /// @notice Early exit. First call snapshots the penalty and arms the cooldown; after
     ///         the snapshotted `readyAt` a subsequent call (or the same call when cooldown is 0) pays out.
+    ///         A lock that has matured by then pays out like `withdraw`.
     function emergencyExit(uint256 tokenId) external nonReentrant {
         (address owner, Lock memory lock) = _openLockOf(tokenId);
         if (_msgSender() != owner) {
@@ -1191,24 +1165,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
         ExitRequest memory req = exitRequest[tokenId];
         if (req.kind == ExitKind.None) {
-            if (lock.end <= block.timestamp) {
-                revert LockNotExpired();
-            }
-            ExitQuote memory q = _quoteExit(lock);
-            uint64 readyAt = _readyAtFromNow();
-            exitRequest[tokenId] = ExitRequest({
-                readyAt: readyAt,
-                kind: ExitKind.Emergency,
-                returned: q.returned.toUint128(),
-                toLockers: q.toLockers.toUint128(),
-                toTreasury: q.toTreasury.toUint128(),
-                penaltyBps: q.penaltyBps.toUint64()
-            });
-            emit ExitRequested(tokenId, ExitKind.Emergency, readyAt);
+            req = _armEmergencyExit(tokenId, lock);
             if (withdrawalCooldown != 0) {
                 return;
             }
-            req = exitRequest[tokenId];
         } else if (req.kind != ExitKind.Emergency) {
             revert WrongExitKind();
         }
@@ -1216,13 +1176,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _requireCooldownElapsed(req.readyAt);
 
         if (lock.end <= block.timestamp) {
-            uint256 amount = lock.amount;
-            delete exitRequest[tokenId];
-            _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
-            closed[tokenId] = true;
-            totalLocked -= amount;
-            IERC20(token).safeTransfer(owner, amount);
-            emit Withdraw(tokenId, owner, amount);
+            _payOutMature(tokenId, owner, lock);
             return;
         }
 
@@ -1250,6 +1204,42 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
 
         emit EmergencyExit(tokenId, owner, returned, penalty, toLockers, toTreasury, penaltyBps);
+    }
+
+    function _armEmergencyExit(uint256 tokenId, Lock memory lock) private returns (ExitRequest memory req) {
+        if (lock.end <= block.timestamp) {
+            revert LockNotExpired();
+        }
+        if (lock.end - block.timestamp <= withdrawalCooldown) {
+            revert LockMaturesDuringCooldown();
+        }
+        if (exitRequest[tokenId].kind != ExitKind.None) {
+            revert ExitPending();
+        }
+
+        ExitQuote memory q = _quoteExit(lock);
+        req = ExitRequest({
+            readyAt: _readyAtFromNow(),
+            kind: ExitKind.Emergency,
+            returned: q.returned.toUint128(),
+            toLockers: q.toLockers.toUint128(),
+            toTreasury: q.toTreasury.toUint128(),
+            penaltyBps: q.penaltyBps.toUint64()
+        });
+        exitRequest[tokenId] = req;
+        emit ExitRequested(tokenId, ExitKind.Emergency, req.readyAt);
+    }
+
+    /// @dev Full principal and no `_recordExit`: a matured lock forfeits nothing.
+    function _payOutMature(uint256 tokenId, address owner, Lock memory lock) private {
+        uint256 amount = lock.amount;
+        delete exitRequest[tokenId];
+        _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        closed[tokenId] = true;
+        totalLocked -= amount;
+
+        IERC20(token).safeTransfer(owner, amount);
+        emit Withdraw(tokenId, owner, amount);
     }
 
     function _readyAtFromNow() private view returns (uint64) {

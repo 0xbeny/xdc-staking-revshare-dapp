@@ -133,6 +133,61 @@ contract WithdrawalCooldownTest is Base {
         escrow.requestEmergencyExit(tokenId);
     }
 
+    function test_emergencyExitFirstCallAlsoRefusesALateRequest() public {
+        uint256 early = _lock(alice, 100 ether, 4 weeks);
+        uint256 late = _lock(alice, 100 ether, 4 weeks);
+        uint256 end = escrow.locked(late).end;
+
+        vm.warp(end - 1 days - 1);
+        vm.prank(alice);
+        escrow.emergencyExit(early);
+        (, VotingEscrow.ExitKind kind,,,) = _exitRequest(early);
+        assertEq(uint8(kind), uint8(VotingEscrow.ExitKind.Emergency), "one second before the edge still arms");
+
+        vm.warp(end - 1 days);
+        vm.startPrank(alice);
+        vm.expectRevert(VotingEscrow.LockMaturesDuringCooldown.selector);
+        escrow.emergencyExit(late);
+        vm.expectRevert(VotingEscrow.LockMaturesDuringCooldown.selector);
+        escrow.requestEmergencyExit(late);
+        vm.stopPrank();
+    }
+
+    function test_aMaturedEarlyExitEarnsTheSameAsAWithdraw() public {
+        vm.warp(_epochStart(_currentEpoch() + 1));
+        uint256 exiter = _lock(alice, 100 ether, 4 weeks);
+        uint256 stayer = _lock(bob, 100 ether, 4 weeks);
+        uint256 end = escrow.locked(exiter).end;
+        for (uint256 i; i < 4; ++i) {
+            _notifyExact(address(usdc), 1000e6);
+            _nextEpoch();
+        }
+
+        vm.warp(end - 36 hours);
+        vm.prank(alice);
+        escrow.requestEmergencyExit(exiter);
+
+        vm.warp(end + 1);
+        uint256 treasuryBefore = wxdc.balanceOf(treasury);
+        uint256 distributorBefore = wxdc.balanceOf(address(distributor));
+        vm.prank(alice);
+        escrow.emergencyExit(exiter);
+        assertEq(wxdc.balanceOf(treasury), treasuryBefore, "no treasury penalty");
+        assertEq(wxdc.balanceOf(address(distributor)), distributorBefore, "no locker penalty");
+
+        vm.prank(bob);
+        escrow.withdraw(stayer);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(bob);
+        escrow.withdraw(stayer);
+
+        _vest();
+        uint256 exiterYield = _claim(alice, exiter, address(usdc));
+        assertEq(exiterYield, _claim(bob, stayer, address(usdc)), "same yield as a withdraw");
+        assertEq(exiterYield, 2000e6);
+        assertEq(distributor.exitForfeitMovements(address(usdc)), 0);
+    }
+
     function test_finalizeAfterMaturityReturnsFullPrincipalAndKeepsYield() public {
         uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
         vm.warp(escrow.locked(tokenId).end - 36 hours);

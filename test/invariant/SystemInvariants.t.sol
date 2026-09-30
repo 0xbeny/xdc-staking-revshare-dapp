@@ -17,7 +17,7 @@ contract SystemInvariantsTest is Base {
         handler =
             new Handler(escrow, zap, distributor, pusher, wxdc, usdc, dapp, timelock, guardian, [alice, bob, carol]);
 
-        bytes4[] memory selectors = new bytes4[](14);
+        bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = Handler.createLock.selector;
         selectors[1] = Handler.increaseAmount.selector;
         selectors[2] = Handler.extendLock.selector;
@@ -32,6 +32,8 @@ contract SystemInvariantsTest is Base {
         selectors[11] = Handler.setPenaltyParams.selector;
         selectors[12] = Handler.setStakingCap.selector;
         selectors[13] = Handler.compound.selector;
+        selectors[14] = Handler.setCooldown.selector;
+        selectors[15] = Handler.cancelExit.selector;
 
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
@@ -151,6 +153,11 @@ contract SystemInvariantsTest is Base {
     ///      Otherwise the same share is paid to the leaver and again to the stayers.
     function invariant_forfeitedEpochsWereNeverPaid() public view {
         assertEq(handler.forfeitedPaidViolations(), 0);
+    }
+
+    /// @dev An early exit finalized after maturity pays like `withdraw`: full principal, no forfeiture.
+    function invariant_maturedEarlyExitsPayInFull() public view {
+        assertEq(handler.maturedExitViolations(), 0);
     }
 
     /// @dev Settled epochs are always strictly in the past.
