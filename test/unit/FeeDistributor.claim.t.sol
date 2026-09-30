@@ -2,6 +2,8 @@
 pragma solidity 0.8.28;
 
 import {FeeDistributor} from "../../src/FeeDistributor.sol";
+import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
+import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
 import {Base} from "../Base.t.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 
@@ -231,9 +233,7 @@ contract FeeDistributorClaimTest is Base {
 
     function test_aTokenAddedLateStartsAtTheAddEpoch() public {
         _warpEpochs(80);
-        MockERC20 late = new MockERC20("Late", "LATE", 18);
-        vm.prank(timelock);
-        distributor.addRewardToken(address(late));
+        (MockERC20 late,) = _listLateToken();
         uint256 added = distributor.settledEpoch(address(late));
 
         address[] memory tokens = new address[](1);
@@ -245,5 +245,42 @@ contract FeeDistributorClaimTest is Base {
         assertEq(
             distributor.unvestedForfeitCursor(address(late)), added, "harvest skips epochs before the token existed"
         );
+    }
+
+    function test_aLateTokensFirstEpochIsPaidAndItsForfeitureForwarded() public {
+        _warpEpochs(80);
+        uint256 b = _lock(bob, 100_000 ether, 104 weeks);
+        uint256 c = _lock(carol, 100_000 ether, 104 weeks);
+        _nextEpoch();
+
+        (MockERC20 late, PushAdapter latePusher) = _listLateToken();
+        late.mint(dapp, 1000 ether);
+        vm.startPrank(dapp);
+        late.approve(address(latePusher), 1000 ether);
+        latePusher.commitRevenue(address(late), 1000 ether);
+        vm.stopPrank();
+
+        _nextEpoch();
+        _completeEmergencyExit(bob, b);
+        for (uint256 i; i < 2 * distributor.VESTING_EPOCHS() + 1; ++i) {
+            _nextEpoch();
+            distributor.settle(address(late), 52);
+        }
+
+        assertEq(_claim(bob, b, address(late)), 0, "the leaver forfeits the unvested add epoch");
+        uint256 paid = _claim(alice, a, address(late)) + _claim(carol, c, address(late));
+        assertApproxEqAbs(paid, 1000 ether, 5, "the add epoch and its forfeited slice reach the stayers");
+        assertEq(late.balanceOf(address(distributor)), distributor.accounted(address(late)));
+    }
+
+    function _listLateToken() internal returns (MockERC20 late, PushAdapter adapter) {
+        late = new MockERC20("Late", "LATE", 18);
+        address[] memory one = new address[](1);
+        one[0] = address(late);
+        adapter = new PushAdapter(dapp, address(distributor), dappTreasury, 10_000, one);
+        vm.startPrank(timelock);
+        distributor.addRewardToken(address(late));
+        registry.registerAdapter(address(adapter), dapp, IRevenueRegistry.Mode.PUSH, 10_000, 1, "late");
+        vm.stopPrank();
     }
 }

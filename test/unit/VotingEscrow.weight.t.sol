@@ -221,6 +221,7 @@ contract VotingEscrowWeightTest is Base {
 
     function test_idleOwnerWithdrawsAfterTheGlobalCheckpointAlone() public {
         uint256 tokenId = _lock(alice, 1000 ether, 4 weeks);
+        uint256 lockedAt = block.timestamp;
         vm.warp(block.timestamp + 300 weeks);
         escrow.checkpoint();
         escrow.checkpoint();
@@ -230,5 +231,29 @@ contract VotingEscrowWeightTest is Base {
 
         assertEq(escrow.locked(tokenId).amount, 0);
         assertEq(escrow.weightOf(alice), 0);
+        uint256 midLock = lockedAt + 2 weeks;
+        assertGt(escrow.weightOfAt(alice, midLock), 0);
+        assertEq(escrow.weightOfAt(alice, midLock), escrow.balanceOfNFTAt(tokenId, midLock), "history before the jump");
+        assertEq(escrow.weightOfAt(alice, lockedAt + 200 weeks), 0);
+    }
+
+    function test_accountHistoryStaysExactAcrossCompressedIdleWeeks() public {
+        vm.warp(block.timestamp + 3 days);
+        uint256[3] memory ids = [
+            _lock(alice, 1000 ether, 6 weeks), _lock(alice, 2000 ether, 30 weeks), _lock(alice, 3000 ether, 104 weeks)
+        ];
+        uint256 start = block.timestamp;
+
+        vm.warp(escrow.locked(ids[0]).end + 3 days);
+        _completeWithdraw(alice, ids[0]);
+        vm.warp(escrow.locked(ids[1]).end + 10 days);
+        _completeWithdraw(alice, ids[1]);
+
+        for (uint256 t = start; t < block.timestamp; t += 1 days) {
+            uint256 sum =
+                escrow.balanceOfNFTAt(ids[0], t) + escrow.balanceOfNFTAt(ids[1], t) + escrow.balanceOfNFTAt(ids[2], t);
+            assertEq(escrow.weightOfAt(alice, t), sum, "account history");
+            assertEq(escrow.totalSupplyAt(t), sum, "global history");
+        }
     }
 }
