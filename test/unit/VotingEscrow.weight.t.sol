@@ -202,4 +202,32 @@ contract VotingEscrowWeightTest is Base {
         assertEq(escrow.userPointAt(tokenId, 1).ts, block.timestamp);
         assertEq(escrow.userPointAt(tokenId, 0).amount, 150 ether, "history is immutable");
     }
+
+    function test_withdrawAfterAFullLockDoesNotStoreEveryIdleWeek() public {
+        uint256 tokenId = _lock(alice, 1000 ether, 104 weeks);
+        vm.warp(escrow.locked(tokenId).end + 1);
+        escrow.checkpoint();
+
+        vm.prank(alice);
+        uint256 used = gasleft();
+        escrow.withdraw(tokenId);
+        used = used - gasleft();
+
+        assertLt(used, 1_500_000, "catch-up must not write one entry per idle week");
+        assertEq(escrow.locked(tokenId).amount, 0);
+        assertEq(escrow.weightOf(alice), 0);
+    }
+
+    function test_idleOwnerWithdrawsAfterTheGlobalCheckpointAlone() public {
+        uint256 tokenId = _lock(alice, 1000 ether, 4 weeks);
+        vm.warp(block.timestamp + 300 weeks);
+        escrow.checkpoint();
+        escrow.checkpoint();
+
+        vm.prank(alice);
+        escrow.withdraw(tokenId);
+
+        assertEq(escrow.locked(tokenId).amount, 0);
+        assertEq(escrow.weightOf(alice), 0);
+    }
 }

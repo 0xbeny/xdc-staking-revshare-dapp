@@ -632,6 +632,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     }
 
     /// @dev Same week-walk as `_globalCheckpoint`, but only this account's slope schedule.
+    ///      Stores the resulting point once. A fully decayed account jumps to now, so an idle
+    ///      owner is never stuck behind `MAX_WEEK_STEPS`.
     function _checkpointAccount(address account) private {
         AccountPoint[] storage history = _accountPointHistory[account];
         uint256 len = history.length;
@@ -649,6 +651,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         int128 slope = last.slope;
         uint256 lastTs = last.ts;
         uint256 ti = EpochTime.floorWeek(lastTs);
+        bool done = false;
 
         for (uint256 i = 0; i < MAX_WEEK_STEPS; ++i) {
             ti += WEEK;
@@ -670,11 +673,18 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
                 slope = 0;
             }
             lastTs = t;
-            history.push(AccountPoint({bias: bias, slope: slope, ts: t.toUint64()}));
             if (t == block.timestamp) {
+                done = true;
                 break;
             }
         }
+
+        // No live lock can outlast ~105 weeks, so a zero here has nothing left to apply.
+        if (!done && bias == 0 && slope == 0) {
+            lastTs = block.timestamp;
+        }
+
+        history.push(AccountPoint({bias: bias, slope: slope, ts: lastTs.toUint64()}));
     }
 
     /// @dev Per-account twin of `_applyLock`. Linearity makes the sum of accounts equal the global supply.
