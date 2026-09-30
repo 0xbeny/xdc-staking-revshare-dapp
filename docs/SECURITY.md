@@ -59,17 +59,24 @@ The invariant suite runs under `make ci` with `fail_on_revert = true`, 256 runs 
 
 ## Coverage
 
-`make coverage` reports 100% branch coverage on `FeeDistributor`, `RevenueRegistry`,
-`ZapDepositor` and every adapter. `VotingEscrow` reports 57/65 branches; the eight unhit
-branches are deliberately defensive and unreachable through any public path, and are kept
-rather than deleted because each one bounds the blast radius of a bug that the invariant suite
-says does not exist:
+`forge coverage` under the CI profile, invariants excluded:
+
+| Contract | Lines | Branches |
+|---|---|---|
+| `FeeDistributor` | 98.26% (282/287) | 91.49% (43/47) |
+| `VotingEscrow` | 95.82% (550/574) | 83.61% (102/122) |
+| `ZapDepositor` | 94.55% (52/55) | 100% (12/12) |
+
+The escrow branches that stay unhit on purpose are the defensive clamps. They are kept because each one bounds a bug the invariant suite says does not exist:
 
 | Branch | Why it is unreachable | Why it stays |
 |---|---|---|
-| `bias < 0` / `slope < 0` clamps in `_globalCheckpoint`, `_applyLock`, `totalSupplyAt` (6) | contributions are added and removed with the same truncated slope, so the aggregate never undershoots zero (`invariant_totalSupplyEqualsSumOfPositions`) | a negative aggregate would corrupt every snapshot; clamping fails safe |
+| `bias < 0` / `slope < 0` clamps in the global, account and supply walks | contributions are added and removed with the same truncated slope, so the aggregate never undershoots zero (`invariant_totalSupplyEqualsSumOfPositions`) | a negative aggregate would corrupt every snapshot; clamping fails safe |
+| account `HistoryStale` after `_checkpointAccount` | a live lock cannot outlast the 255-week walk, and a decayed account jumps to now | a mutation that cannot catch up still refuses to rewrite the lock |
 | `unlock - now < MIN_LOCK` after round-up in `createLockFor` | `duration >= MIN_LOCK` is checked first and `ceilWeek` only lengthens | keeps the `effective lock >= MIN_LOCK` invariant local to the function that must uphold it |
 | `from != address(0)` in `_update` | every transfer entry point is overridden to revert before reaching `_update` | a second, independent enforcement of soulbound-ness against a future ERC721 base change |
+
+Forge does not count a constructor revert toward branch coverage. The remaining adapter misses are the pending-only retry on Pull and Zodiac.
 
 ## Bugs the test-suite found before launch
 

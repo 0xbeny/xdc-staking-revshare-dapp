@@ -40,12 +40,21 @@ contract GuardsTest is Base {
         escrow.setTier(address(0), VotingEscrow.Tier.CUSTODIAN);
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
         escrow.transferTimelock(address(0));
+        vm.expectRevert(VotingEscrow.ZeroAddress.selector);
+        escrow.setCapGuardian(address(0));
         vm.stopPrank();
 
         deal(address(wxdc), address(zap), 1 ether);
         vm.prank(address(zap));
         vm.expectRevert(VotingEscrow.ZeroAddress.selector);
         escrow.createLockFor(address(0), 1 ether, 4 weeks);
+    }
+
+    function test_unsetDepositorRejectsZero() public {
+        VotingEscrow fresh =
+            new VotingEscrow(address(wxdc), address(distributor), treasury, timelock, guardian, 5000, 2000);
+        vm.expectRevert(VotingEscrow.ZeroAddress.selector);
+        fresh.setDepositor(address(0));
     }
 
     function test_escrow_increaseAmountRejectsZero() public {
@@ -172,8 +181,9 @@ contract GuardsTest is Base {
         vm.prank(timelock);
         registry.registerAdapter(address(odd), dapp, IRevenueRegistry.Mode.SPLITTER, 5000, 1, "");
         MockERC20(unknown).mint(address(odd), 1 ether);
-        vm.expectRevert(FeeDistributor.UnknownRewardToken.selector);
         odd.skim(unknown);
+        assertEq(MockERC20(unknown).balanceOf(dappTreasury), 0.5 ether, "the dApp share still leaves");
+        assertEq(odd.pendingCommitted(unknown), 0.5 ether, "an unknown token cannot be notified");
     }
 
     function test_distributor_tokenNotAcceptingAndZeroAmount() public {

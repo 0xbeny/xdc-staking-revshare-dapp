@@ -265,6 +265,45 @@ contract VotingEscrowLockTest is Base {
         escrow.withdraw(tokenId);
     }
 
+    function test_requestAndCancelExitRejectTheWrongCallerAndState() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.requestWithdraw(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.LockNotExpired.selector);
+        escrow.requestWithdraw(tokenId);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.ExitPending.selector);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.WrongExitKind.selector);
+        escrow.withdraw(tokenId);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.cancelExitRequest(tokenId);
+        vm.prank(alice);
+        escrow.cancelExitRequest(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.NoExitRequest.selector);
+        escrow.cancelExitRequest(tokenId);
+
+        vm.warp(escrow.locked(tokenId).end);
+        vm.prank(alice);
+        escrow.requestWithdraw(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.WrongExitKind.selector);
+        escrow.emergencyExit(tokenId);
+    }
+
     function test_closedPositionCannotBeReused() public {
         uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
         vm.warp(escrow.locked(tokenId).end);

@@ -93,6 +93,25 @@ contract ZapDepositorTest is Base {
         assertEq(escrow.locked(tokenId).amount, 150 ether);
     }
 
+    function test_increaseAmountWXDCRejectsZeroAndStrangers() public {
+        vm.prank(alice);
+        uint256 tokenId = zap.zapCreateLock{value: 100 ether}(4 weeks);
+
+        vm.prank(alice);
+        vm.expectRevert(ZapDepositor.ZeroAmount.selector);
+        zap.increaseAmountWXDC(tokenId, 0);
+
+        vm.prank(bob);
+        vm.expectRevert(ZapDepositor.NotPositionOwner.selector);
+        zap.increaseAmountWXDC(tokenId, 1 ether);
+    }
+
+    function test_lockWXDCForRejectsAZeroBeneficiary() public {
+        vm.prank(alice);
+        vm.expectRevert(ZapDepositor.ZeroAddress.selector);
+        zap.lockWXDCFor(address(0), 1 ether, 4 weeks);
+    }
+
     /// @dev Adding principal re-weights the position's penalty cap, so only the owner may do it
     ///      through the zap. The escrow itself stays Curve-style permissionless so compounders
     ///      and gifters can still fund a position directly.
