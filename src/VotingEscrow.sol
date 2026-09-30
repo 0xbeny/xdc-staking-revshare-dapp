@@ -276,6 +276,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error NoExitRequest();
     error WrongExitKind();
     error CooldownActive(uint256 readyAt);
+    error LockMaturesDuringCooldown();
     error NotOptedIn();
 
     /*//////////////////////////////////////////////////////////////
@@ -1091,6 +1092,9 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         if (lock.end <= block.timestamp) {
             revert LockNotExpired();
         }
+        if (lock.end - block.timestamp <= withdrawalCooldown) {
+            revert LockMaturesDuringCooldown();
+        }
         if (exitRequest[tokenId].kind != ExitKind.None) {
             revert ExitPending();
         }
@@ -1192,6 +1196,17 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
 
         _requireCooldownElapsed(req.readyAt);
+
+        if (lock.end <= block.timestamp) {
+            uint256 amount = lock.amount;
+            delete exitRequest[tokenId];
+            _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+            closed[tokenId] = true;
+            totalLocked -= amount;
+            IERC20(token).safeTransfer(owner, amount);
+            emit Withdraw(tokenId, owner, amount);
+            return;
+        }
 
         uint256 returned = req.returned;
         uint256 toLockers = req.toLockers;

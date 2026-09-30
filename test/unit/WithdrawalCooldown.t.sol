@@ -124,6 +124,32 @@ contract WithdrawalCooldownTest is Base {
         vm.stopPrank();
     }
 
+    function test_requestEmergencyExitRevertsWhenCooldownOutlastsTheLock() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+        vm.warp(escrow.locked(tokenId).end - 12 hours);
+
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.LockMaturesDuringCooldown.selector);
+        escrow.requestEmergencyExit(tokenId);
+    }
+
+    function test_finalizeAfterMaturityReturnsFullPrincipalAndKeepsYield() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+        vm.warp(escrow.locked(tokenId).end - 36 hours);
+
+        vm.prank(alice);
+        escrow.requestEmergencyExit(tokenId);
+        vm.warp(escrow.locked(tokenId).end + 1);
+
+        uint256 before = wxdc.balanceOf(alice);
+        vm.prank(alice);
+        escrow.emergencyExit(tokenId);
+
+        assertEq(wxdc.balanceOf(alice) - before, 100 ether, "matured lock pays no penalty");
+        assertEq(escrow.exitEpoch(tokenId), 0, "a matured exit does not forfeit yield");
+        assertTrue(escrow.closed(tokenId));
+    }
+
     function _exitRequest(uint256 tokenId)
         internal
         view
