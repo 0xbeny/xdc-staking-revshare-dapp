@@ -405,7 +405,8 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     /// @notice Claims the escrow token and folds it straight back into the position.
     /// @dev Never extends duration and never changes the penalty cap beyond the weighted
-    ///      `increase_amount` rule. Degrades to a plain claim once the lock is closed or expired.
+    ///      `increase_amount` rule. Degrades to a plain claim when the lock is closed or expired,
+    ///      has a pending exit, or the staking cap has no room for the amount.
     function claimAndLock(uint256 tokenId) public nonReentrant whenNotPaused returns (uint256) {
         if (!_mayCompound(tokenId, _msgSender())) {
             revert NotAuthorized();
@@ -435,7 +436,10 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
         IVotingEscrow.Lock memory lock = escrow.locked(tokenId);
         bool lockIsLive = lock.amount > 0 && lock.end > block.timestamp;
-        if (!lockIsLive) {
+        // A pending exit or a full cap makes `increaseAmount` revert. Paying out keeps a
+        // keeper batch alive: one position must not roll back the rest.
+        bool canLock = lockIsLive && !_exitPending(tokenId) && escrow.totalLocked() + amount <= escrow.stakingCap();
+        if (!canLock) {
             address to = _recipient(tokenId);
             IERC20(token).safeTransfer(to, amount);
             emit Claimed(tokenId, token, to, amount, claimCursor[tokenId][token]);
@@ -445,6 +449,13 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         IERC20(token).forceApprove(address(escrow), amount);
         escrow.increaseAmount(tokenId, amount);
         emit Compounded(tokenId, amount);
+    }
+
+    function _exitPending(uint256 tokenId) internal view returns (bool pending) {
+        // Only the kind matters here; the other fields are the frozen exit quote.
+        // forge-lint: disable-next-line(unused-return)
+        (, uint8 kind,,,,) = escrow.exitRequest(tokenId);
+        pending = kind != 0;
     }
 
     /// @dev Finalises what can be finalised, then advances the position's cursor over it.

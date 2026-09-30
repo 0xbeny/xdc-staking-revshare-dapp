@@ -51,7 +51,7 @@ transferable) whose powers are clamped by constants.
 | Claims: cursor monotonic, bounded, idempotent, no double-pay across pages | `invariant_claimCursorsAreMonotonic`, `testFuzz_pagedClaimsSumToTheSameTotal`, `testFuzz_repeatedClaimsAreIdempotent` |
 | B2/B3: fee Safe balance == 0 after sweep; double-skim moves zero | `Adapters.t.sol` |
 | Mode C: unique immutable records, atomic transfer, reporter cannot set distribution epoch, no clawback | `Attestor.t.sol` |
-| Keeper: epoch guards, window guard, missed window never corrected, compound at expiry degrades to claim | `FeeDistributor.keeper.t.sol` |
+| Keeper: epoch guards, window guard, missed window never corrected, compound degrades to claim at expiry, on a pending exit, or when the cap is full | `FeeDistributor.keeper.t.sol` |
 | Zero-supply epochs carry forward, never divide by zero | `test_zeroSupplyEpochCarriesRevenueForward`, `test_settleNeverDividesByZero` |
 
 The invariant suite runs under `make ci` with `fail_on_revert = true`, 256 runs × 64 depth.

@@ -28,6 +28,7 @@ interface IVotingEscrow {
     function maxPenaltyBps() external view returns (uint256);
     function penaltySplitBps() external view returns (uint256);
     function stakingCap() external view returns (uint256);
+    function totalLocked() external view returns (uint256);
     function capGuardian() external view returns (address);
 
     function ownerOf(uint256 tokenId) external view returns (address);
@@ -38,6 +39,10 @@ interface IVotingEscrow {
     function exitedWeightByEpoch(uint256 epoch) external view returns (uint256);
     function unvestedForfeitWeight(uint256 epoch) external view returns (uint256);
     function autoExtend(uint256 tokenId) external view returns (bool);
+    function exitRequest(uint256 tokenId)
+        external
+        view
+        returns (uint64 readyAt, uint8 kind, uint128 returned, uint128 toLockers, uint128 toTreasury, uint64 penaltyBps);
     function setAutoExtend(uint256 tokenId, bool enabled) external;
 
     function balanceOfNFT(uint256 tokenId) external view returns (uint256);

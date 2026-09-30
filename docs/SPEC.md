@@ -151,7 +151,7 @@ Foundry invariants first-class; fork audited escrow references, audit the diff; 
 - Claims: cursor monotonic, `MAX_EPOCHS_PER_CLAIM` bound respected, repeated claims idempotent, no epoch double-paid across cursor pages.
 - B2/B3: fee Safe balance == 0 after successful sweep; double-skim moves zero.
 - Mode C: `(dapp, token, sourceEpoch)` unique and immutable; amount == transferred atomically; reporter cannot set distributionEpoch; adjustments never pull from the distributor.
-- Keeper: epoch guards revert stale txs; `keepAtMaxLock` outside the pre-boundary window has no retroactive effect; compound at/after expiry degrades to plain claim.
+- Keeper: epoch guards revert stale txs; `keepAtMaxLock` outside the pre-boundary window has no retroactive effect; compound degrades to a plain claim at/after expiry, while an exit is pending, or when the staking cap has no room, so one position never reverts a keeper batch.
 
 **Audit path & launch controls:** unchanged (primary audit → contest → upgradeable-path review → Immunefi; weekly TVL caps, rate limits, guardian pause, Hermes monitoring).
 

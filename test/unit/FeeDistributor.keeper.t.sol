@@ -146,6 +146,52 @@ contract FeeDistributorKeeperTest is Base {
         assertEq(escrow.totalSupplyAtWeek(_epochStart(epoch)), snapshotBefore, "this epoch's snapshot is closed");
     }
 
+    function test_batchCompoundPaysOutWhenOneExitIsPending() public {
+        vm.prank(timelock);
+        escrow.setWithdrawalCooldown(1 days);
+        uint256 b = _lock(bob, 100_000 ether, 52 weeks);
+        vm.prank(bob);
+        distributor.setAutoCompound(b, true);
+        _nextEpoch();
+
+        _notifyExact(address(wxdc), 200 ether);
+        _nextEpoch();
+        _vest();
+
+        vm.prank(alice);
+        escrow.requestEmergencyExit(a);
+
+        uint256 bobPrincipal = escrow.locked(b).amount;
+        uint256 aliceCash = wxdc.balanceOf(alice);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = b;
+        ids[1] = a;
+
+        vm.prank(keeper);
+        distributor.batchCompound(ids, _currentEpoch());
+
+        assertGt(escrow.locked(b).amount, bobPrincipal, "the healthy position is still compounded");
+        assertGt(wxdc.balanceOf(alice), aliceCash, "the pending exit is paid out");
+        assertEq(escrow.locked(a).amount, 100_000 ether, "a pending exit does not take new principal");
+    }
+
+    function test_batchCompoundPaysOutWhenCapHasNoRoom() public {
+        _notifyExact(address(wxdc), 100 ether);
+        _nextEpoch();
+        _vest();
+
+        uint256 cap = escrow.totalLocked() + 1;
+        vm.prank(timelock);
+        escrow.setStakingCap(cap);
+
+        uint256 cash = wxdc.balanceOf(alice);
+        vm.prank(keeper);
+        distributor.batchCompound(_ids(), _currentEpoch());
+
+        assertGt(wxdc.balanceOf(alice), cash, "yield is paid out when it cannot be locked");
+        assertEq(escrow.locked(a).amount, 100_000 ether);
+    }
+
     function test_batchCompoundIsEpochGuarded() public {
         vm.prank(keeper);
         vm.expectRevert(FeeDistributor.StaleEpoch.selector);
