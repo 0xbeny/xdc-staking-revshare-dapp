@@ -18,7 +18,7 @@ contract PenaltyFuzzTest is Base {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(cap);
 
-        vm.warp(_epochStart(_currentEpoch()) + bound(offset, 0, WEEK - 1));
+        _warpToWeekOffset(bound(offset, 0, WEEK - 1));
         uint256 tokenId = _lock(alice, amount, bound(weeksToLock, 1, 104) * WEEK);
 
         uint256 end = escrow.locked(tokenId).end;

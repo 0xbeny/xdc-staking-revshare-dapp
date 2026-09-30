@@ -29,9 +29,9 @@ abstract contract Base is Test {
     uint256 internal constant MAX_LOCK = 104 weeks;
     uint256 internal constant MIN_LOCK = 1 weeks;
 
-    // Deterministic starting point: Thursday 2026-01-01 00:00:00 UTC is not a week boundary,
-    // which is exactly what we want — the system must not assume it starts aligned.
-    uint256 internal constant GENESIS = 1_767_225_600; // 2026-01-01 00:00:00 UTC
+    // Thursday 2026-01-01 00:00:00 UTC is a week boundary. Start three days later so a lock
+    // can be created mid-week, which is the normal case.
+    uint256 internal constant GENESIS = 1_767_225_600 + 3 days;
 
     address internal timelock = makeAddr("timelock");
     address internal guardian = makeAddr("guardian");
@@ -196,6 +196,16 @@ abstract contract Base is Test {
     /// @dev Last hour of the current epoch, inside the keeper window.
     function _intoKeeperWindow() internal {
         vm.warp(_epochStart(_currentEpoch() + 1) - 1 hours);
+    }
+
+    /// @dev `offset` after a week boundary, never before now. The current week may have started
+    ///      before deployment, and escrow history cannot be rewound.
+    function _warpToWeekOffset(uint256 offset) internal {
+        uint256 target = _epochStart(_currentEpoch()) + offset;
+        if (target <= block.timestamp) {
+            target = _epochStart(_currentEpoch() + 1) + offset;
+        }
+        vm.warp(target);
     }
 
     /// @dev Warps to the start of the next epoch, plus one second.
