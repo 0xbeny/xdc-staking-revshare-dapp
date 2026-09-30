@@ -341,7 +341,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
                 }
             } else if (pot > 0) {
                 uint256 exited = escrow.exitedWeightByEpoch(cursor);
-                if (exited > 0) {
+                if (exited > 0 && exited <= supply) {
                     // Move the exited slice forward *without* touching this epoch's numerator or
                     // denominator: remaining lockers still claim `pot * w / supply`.
                     movedForward = (pot * exited) / supply;
