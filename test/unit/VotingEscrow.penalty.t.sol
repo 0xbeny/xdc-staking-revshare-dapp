@@ -5,6 +5,13 @@ import {VotingEscrow} from "../../src/VotingEscrow.sol";
 import {Base} from "../Base.t.sol";
 
 contract VotingEscrowPenaltyTest is Base {
+    function test_lockedCarriesNoSeparatePenaltyCap() public {
+        uint256 tokenId = _lock(alice, 100 ether, 52 weeks);
+        (bool ok, bytes memory data) = address(escrow).staticcall(abi.encodeWithSignature("locked(uint256)", tokenId));
+        assertTrue(ok);
+        assertEq(data.length, 64, "a lock is its amount and its end");
+    }
+
     function test_penalty_scalesWithEffectiveTime() public {
         uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
 
@@ -137,14 +144,13 @@ contract VotingEscrowPenaltyTest is Base {
                             GRANDFATHERING (#5)
     //////////////////////////////////////////////////////////////*/
 
-    function test_grandfathering_globalDecreaseAppliesImmediately() public {
-        uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 5000);
+    function test_aLowerGlobalCapAppliesToExistingLocks() public {
+        uint256 tokenId = _lock(alice, 100_000 ether, MAX_LOCK);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 1000, "reductions apply immediately");
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 5000, "stored cap is unchanged");
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertEq(bps, 1000, "every live lock uses the current cap");
     }
 
     function test_maxPenaltyBpsIsMonotonicallyNonIncreasing() public {
@@ -168,27 +174,26 @@ contract VotingEscrowPenaltyTest is Base {
 
     /// @dev Stateful sequence the old fuzz suite missed: lower → raise attempt must not worsen.
     function test_grandfathering_governanceCannotRaiseAfterLowering() public {
-        uint256 tokenId = _lock(alice, 100_000 ether, 52 weeks);
+        uint256 tokenId = _lock(alice, 100_000 ether, MAX_LOCK);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
-        uint256 effectiveAtLow = escrow.effectivePenaltyCapBps(tokenId);
-        assertEq(effectiveAtLow, 1000);
+        (,, uint256 bpsAtLow) = escrow.previewExit(tokenId);
+        assertEq(bpsAtLow, 1000);
 
         vm.prank(timelock);
         vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
         escrow.setMaxPenaltyBps(4000);
 
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), effectiveAtLow, "raise attempt left economics untouched");
+        (,, uint256 bpsAfter) = escrow.previewExit(tokenId);
+        assertEq(bpsAfter, bpsAtLow, "a rejected raise leaves the price unchanged");
     }
 
-    /// @dev create @ 10% → global cannot jump to 50%; adding principal uses current (≤) global.
-    function test_increaseAmount_afterGlobalDropPreservesEffectiveEconomics() public {
+    function test_aTopUpUsesTheCurrentGlobalCap() public {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
-        uint256 tokenId = _lock(alice, 100 ether, 52 weeks);
+        uint256 tokenId = _lock(alice, 100 ether, MAX_LOCK);
 
-        // Further drop, then add principal — weighted avg, effective still min(stored, global).
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(500);
 
@@ -197,35 +202,18 @@ contract VotingEscrowPenaltyTest is Base {
         escrow.increaseAmount(tokenId, 100 ether);
         vm.stopPrank();
 
-        // (100*1000 + 100*500) / 200 = 750
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 750);
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 500);
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertEq(bps, 500, "a top-up does not blend in the old cap");
+        assertEq(escrow.locked(tokenId).amount, 200 ether);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(200);
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 200, "further reductions still help");
-    }
-
-    function test_increaseAmount_oldPrincipalKeepsItsTermsExactly() public {
-        uint256 tokenId = _lock(alice, 100 ether, 52 weeks); // cap 5000
-
-        vm.prank(timelock);
-        escrow.setMaxPenaltyBps(1000);
-
-        vm.startPrank(alice);
-        wxdc.approve(address(escrow), 100 ether);
-        escrow.increaseAmount(tokenId, 100 ether);
-        vm.stopPrank();
-
-        // (100*5000 + 100*1000) / 200 = 3000
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 3000, "weighted average, not a silent worsening");
-        // Global is still 1000, so the effective cap is the better of the two.
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), 1000);
+        (,, uint256 later) = escrow.previewExit(tokenId);
+        assertEq(later, 200, "a later reduction still applies");
     }
 
     function test_extensionsNeverChangeTheCap() public {
         uint256 tokenId = _lock(alice, 100_000 ether, 20 weeks);
-        uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(1000);
@@ -238,7 +226,9 @@ contract VotingEscrowPenaltyTest is Base {
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
 
-        assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore, "a keeper convenience flag is not consent");
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertEq(bps, 1000, "an extension uses the current cap");
+        assertEq(escrow.locked(tokenId).amount, 100_000 ether);
     }
 
     function test_keeperExtensionNeverChangesTheCap() public {
@@ -256,7 +246,8 @@ contract VotingEscrowPenaltyTest is Base {
         vm.prank(keeper);
         escrow.keepAtMaxLock(tokenId);
 
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 1000);
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertEq(bps, 500);
     }
 
     /*//////////////////////////////////////////////////////////////

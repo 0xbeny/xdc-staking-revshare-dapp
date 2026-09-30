@@ -37,7 +37,7 @@ Alice → ZapDepositor.zapCreateLock{value: 100_000 ether}(52 weeks)
 ```
 
 **Result:** NFT `#7` owned by Alice; unlock = `ceilWeek(now + 52w)`;
-`penaltyCapBps` snapshotted; weight ≈ half of max for that principal until extended.
+weight ≈ half of max for that principal until extended.
 Mid-epoch locks first earn at the **next** epoch snapshot (`firstEligibleEpoch`).
 
 ### 1.2 Already-wrapped WXDC → own NFT
@@ -88,8 +88,7 @@ EOAs need no tier. Wrong/missing receiver → mint reverts **before** principal 
 Alice → Zap.zapIncreaseAmount{value: 10_000 ether}(7)
 ```
 
-Owner-only on Zap (re-weights grandfathered `penaltyCapBps`). Escrow
-`increaseAmount` itself is permissionless, but Zap enforces owner for the wrap UX.
+Owner-only on Zap. Escrow `increaseAmount` itself is permissionless, but Zap enforces owner for the wrap.
 
 ### 2.2 Top up with WXDC via Zap
 
@@ -105,7 +104,7 @@ Carol: WXDC.approve(Escrow, 5_000e18)
 Carol → escrow.increaseAmount(7, 5_000e18)
 ```
 
-Same cap re-weight formula. Useful for auto-compound (`claimAndLock`) and gifts of principal.
+Useful for auto-compound (`claimAndLock`) and gifts of principal.
 
 ### 2.4 Blocked while exit is pending
 
@@ -127,7 +126,6 @@ Alice → escrow.increaseUnlockTime(7, block.timestamp + 104 weeks)
 ```
 
 Unlock rounds **up** to a week boundary; must be strictly later; cannot exceed `now + MAX_LOCK`.
-**Does not** change `penaltyCapBps`.
 
 ### 3.2 Keeper convenience — one-shot max
 

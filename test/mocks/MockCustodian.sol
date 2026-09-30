@@ -23,7 +23,7 @@ contract LockReadyCustodian is IERC721Receiver {
         if (!lockOk || !listOk) {
             revert LockNotReady();
         }
-        (uint128 amount,,) = abi.decode(lockData, (uint128, uint64, uint64));
+        (uint128 amount,) = abi.decode(lockData, (uint128, uint64));
         if (amount == 0) {
             revert LockNotReady();
         }

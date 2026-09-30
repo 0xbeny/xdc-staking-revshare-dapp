@@ -57,7 +57,6 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     struct Lock {
         uint128 amount;
         uint64 end;
-        uint64 penaltyCapBps;
     }
 
     struct ExitQuote {
@@ -234,7 +233,6 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     event ExitRequested(uint256 indexed tokenId, ExitKind kind, uint256 readyAt);
     event ExitRequestCancelled(uint256 indexed tokenId);
     event WithdrawalCooldownSet(uint256 oldValue, uint256 newValue);
-    event PenaltyCapUpdated(uint256 indexed tokenId, uint256 oldCap, uint256 newCap);
     event GlobalCheckpoint(uint256 indexed epochIndex, int128 bias, int128 slope, uint256 ts);
     event MaxPenaltyBpsSet(uint256 oldValue, uint256 newValue);
     event PenaltySplitBpsSet(uint256 oldValue, uint256 newValue);
@@ -333,8 +331,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @notice Penalty parameters live here, behind immutable clamps (spec §3.1 #11).
     ///         There is no PenaltyManager and `emergencyExit` makes no external call for them.
-    /// @dev Monotonically non-increasing: governance may lower the global cap but never raise it.
-    ///      That keeps grandfathering exact without per-tranche accounting.
+    /// @dev Monotonically non-increasing: governance may lower the cap but never raise it.
     function setMaxPenaltyBps(uint256 newValue) external onlyTimelock {
         if (newValue > maxPenaltyBps || newValue > HARD_MAX_PENALTY_BPS) {
             revert ParameterOutOfRange();
@@ -972,9 +969,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         firstEligibleEpoch[tokenId] = EpochTime.epochOf(EpochTime.ceilWeek(block.timestamp));
         _ownedTokens[beneficiary].push(tokenId);
 
-        Lock memory newLock =
-            Lock({amount: amount.toUint128(), end: unlock.toUint64(), penaltyCapBps: maxPenaltyBps.toUint64()});
-        _rewriteLock(tokenId, beneficiary, Lock({amount: 0, end: 0, penaltyCapBps: 0}), newLock);
+        Lock memory newLock = Lock({amount: amount.toUint128(), end: unlock.toUint64()});
+        _rewriteLock(tokenId, beneficiary, Lock({amount: 0, end: 0}), newLock);
 
         // Credit principal from the balance delta, not the nominal amount, so fee-on-transfer
         // tokens cannot desynchronise `totalLocked` from `token.balanceOf(this)`.
@@ -990,9 +986,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         emit Deposit(tokenId, _msgSender(), received, unlock);
     }
 
-    /// @notice Adds principal to an existing position and re-weights its grandfathered penalty cap.
-    /// @dev Cap rule (spec §3.4 #5): `newCap = (oldPrincipal*oldCap + added*currentGlobal) / newPrincipal`.
-    ///      Old principal keeps its terms exactly; new principal enters at current terms.
+    /// @notice Adds principal to an existing position.
     function increaseAmount(uint256 tokenId, uint256 amount) public nonReentrant {
         if (amount == 0) {
             revert ZeroAmount();
@@ -1013,19 +1007,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert IncompleteTransfer();
         }
 
-        uint256 oldPrincipal = oldLock.amount;
-        uint256 newPrincipal = oldPrincipal + received;
-        uint256 newCap = (oldPrincipal * oldLock.penaltyCapBps + received * maxPenaltyBps) / newPrincipal;
+        uint256 newPrincipal = oldLock.amount + received;
 
-        Lock memory newLock =
-            Lock({amount: newPrincipal.toUint128(), end: oldLock.end, penaltyCapBps: newCap.toUint64()});
+        Lock memory newLock = Lock({amount: newPrincipal.toUint128(), end: oldLock.end});
         _rewriteLock(tokenId, owner, oldLock, newLock);
 
         totalLocked += received;
 
-        if (newCap != oldLock.penaltyCapBps) {
-            emit PenaltyCapUpdated(tokenId, oldLock.penaltyCapBps, newCap);
-        }
         emit Deposit(tokenId, _msgSender(), received, oldLock.end);
     }
 
@@ -1069,8 +1057,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
             revert UnlockNotLater();
         }
 
-        Lock memory newLock =
-            Lock({amount: oldLock.amount, end: unlock.toUint64(), penaltyCapBps: oldLock.penaltyCapBps});
+        Lock memory newLock = Lock({amount: oldLock.amount, end: unlock.toUint64()});
         _rewriteLock(tokenId, ownerOf(tokenId), oldLock, newLock);
 
         emit LockExtended(tokenId, oldLock.end, unlock);
@@ -1186,7 +1173,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 penalty = toLockers + toTreasury;
 
         delete exitRequest[tokenId];
-        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0}));
         _recordExit(tokenId);
         closed[tokenId] = true;
         totalLocked -= lock.amount;
@@ -1233,7 +1220,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function _payOutMature(uint256 tokenId, address owner, Lock memory lock) private {
         uint256 amount = lock.amount;
         delete exitRequest[tokenId];
-        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0}));
         closed[tokenId] = true;
         totalLocked -= amount;
 
@@ -1290,12 +1277,11 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function _quoteExit(Lock memory lock) private view returns (ExitQuote memory q) {
         uint256 remaining = lock.end - block.timestamp;
         uint256 eff = remaining > MAX_LOCK ? MAX_LOCK : remaining;
-        uint256 cap = lock.penaltyCapBps < maxPenaltyBps ? lock.penaltyCapBps : maxPenaltyBps;
 
         // Basis points are the spec's unit for the penalty, so the intermediate rounding to
         // a whole bp is the intended behaviour, not a precision slip.
         // slither-disable-next-line divide-before-multiply
-        q.penaltyBps = (cap * eff) / MAX_LOCK;
+        q.penaltyBps = (maxPenaltyBps * eff) / MAX_LOCK;
         q.penalty = (uint256(lock.amount) * q.penaltyBps) / BPS;
         q.returned = lock.amount - q.penalty;
         q.toTreasury = (q.penalty * penaltySplitBps) / BPS;
@@ -1314,12 +1300,6 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         ExitQuote memory q = _quoteExit(lock);
         return (q.returned, q.penalty, q.penaltyBps);
-    }
-
-    /// @notice Effective cap for a position: global reductions apply immediately, increases never do.
-    function effectivePenaltyCapBps(uint256 tokenId) external view returns (uint256) {
-        uint256 cap = _locked[tokenId].penaltyCapBps;
-        return cap < maxPenaltyBps ? cap : maxPenaltyBps;
     }
 
     /*//////////////////////////////////////////////////////////////

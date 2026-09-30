@@ -35,7 +35,6 @@ contract UserJourneyTest is Base {
         assertGe(escrow.locked(position).end - block.timestamp, 52 weeks);
         // ~50,000 ve, plus up to one week of round-up (52w -> at most 52w+6d of 104w).
         assertApproxEqRel(escrow.balanceOfNFT(position), 50_000 ether, 0.02e18, "~50,000 ve initial weight");
-        assertEq(escrow.locked(position).penaltyCapBps, 5000, "cap snapshots at the current global");
 
         // 2. First epoch: a mid-epoch lock first earns at the next start-of-epoch snapshot.
         _epochRevenue();

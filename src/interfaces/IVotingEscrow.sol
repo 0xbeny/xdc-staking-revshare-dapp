@@ -12,7 +12,6 @@ interface IVotingEscrow {
     struct Lock {
         uint128 amount;
         uint64 end;
-        uint64 penaltyCapBps;
     }
 
     function token() external view returns (address);

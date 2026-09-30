@@ -25,7 +25,7 @@ contract PenaltyFuzzTest is Base {
         vm.warp(bound(skipSeconds, block.timestamp, end - 1));
 
         (uint256 returned, uint256 penalty, uint256 bps) = escrow.previewExit(tokenId);
-        assertLe(bps, escrow.effectivePenaltyCapBps(tokenId));
+        assertLe(bps, escrow.maxPenaltyBps());
         assertLe(bps, escrow.HARD_MAX_PENALTY_BPS());
         assertEq(returned + penalty, amount, "principal is fully accounted for");
     }
@@ -38,12 +38,13 @@ contract PenaltyFuzzTest is Base {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(first);
         uint256 tokenId = _lock(alice, 1000 ether, 52 weeks);
-        uint256 effectiveBefore = escrow.effectivePenaltyCapBps(tokenId);
+        (,, uint256 bpsBefore) = escrow.previewExit(tokenId);
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(second);
 
-        assertLe(escrow.effectivePenaltyCapBps(tokenId), effectiveBefore, "an existing cap can only improve");
+        (,, uint256 bpsAfter) = escrow.previewExit(tokenId);
+        assertLe(bpsAfter, bpsBefore, "an existing lock can only get cheaper");
     }
 
     /// @dev Raise attempts always revert once the global is below the attempted value.
@@ -86,13 +87,11 @@ contract PenaltyFuzzTest is Base {
         escrow.increaseAmount(tokenId, added);
         vm.stopPrank();
 
-        uint256 resulting = escrow.locked(tokenId).penaltyCapBps;
-        assertGe(resulting, newGlobal == 0 ? 0 : newGlobal - 1, "never below the cheaper of the two");
-        assertLe(resulting, oldCap, "never above the dearer of the two");
-
-        uint256 expected = (uint256(principal) * oldCap + uint256(added) * newGlobal) / (uint256(principal) + added);
-        assertEq(resulting, expected, "exact weighted average");
-        assertEq(escrow.effectivePenaltyCapBps(tokenId), resulting < newGlobal ? resulting : newGlobal);
+        assertEq(escrow.locked(tokenId).amount, uint256(principal) + added);
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        uint256 remaining = escrow.locked(tokenId).end - block.timestamp;
+        uint256 eff = remaining > MAX_LOCK ? MAX_LOCK : remaining;
+        assertEq(bps, (newGlobal * eff) / MAX_LOCK, "a top-up is priced at the current cap");
     }
 
     /// @dev Extensions never change the cap, at any parameter setting.
@@ -101,7 +100,6 @@ contract PenaltyFuzzTest is Base {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(first);
         uint256 tokenId = _lock(alice, 1000 ether, bound(weeksToLock, 1, 50) * WEEK);
-        uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
 
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(bound(capLater, 0, first));
@@ -111,7 +109,9 @@ contract PenaltyFuzzTest is Base {
         _intoKeeperWindow();
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
-        assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore);
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertLe(bps, escrow.maxPenaltyBps());
+        assertEq(escrow.locked(tokenId).amount, 1000 ether);
     }
 
     /// @dev The penalty split always sums back to the whole penalty, treasury share capped.

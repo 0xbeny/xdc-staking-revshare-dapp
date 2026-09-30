@@ -112,7 +112,7 @@ contract SystemInvariantsTest is Base {
         for (uint256 i; i < n; ++i) {
             uint256 tokenId = handler.tokenIds(i);
             (,, uint256 bps) = escrow.previewExit(tokenId);
-            assertLe(bps, escrow.effectivePenaltyCapBps(tokenId));
+            assertLe(bps, escrow.maxPenaltyBps());
             assertLe(bps, escrow.HARD_MAX_PENALTY_BPS());
         }
     }

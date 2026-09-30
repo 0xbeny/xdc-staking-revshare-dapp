@@ -42,7 +42,7 @@ transferable) whose powers are clamped by constants.
 | `weight ≤ principal`, `effectiveTime ≤ MAX_LOCK` | `invariant_weightNeverExceedsPrincipal`, `testFuzz_weightNeverExceedsPrincipal`, `testFuzz_effectiveTimeIsAlwaysClamped` |
 | `totalSupply == Σ position weight` (incl. clamped region) | `invariant_totalSupplyEqualsSumOfPositions`, `testFuzz_totalSupplyEqualsSumOfPositions` |
 | `penaltyBps ≤ min(positionCap, maxPenaltyBps) ≤ HARD_MAX` | `invariant_penaltyStaysWithinTheClamps`, `testFuzz_penaltyIsAlwaysWithinTheClamps` |
-| Grandfathering: governance never raises an existing cap; `increase_amount` re-weights exactly; extensions never change it | `testFuzz_governanceCannotWorsenAnExistingPosition`, `testFuzz_increaseAmountReweightsCapWithinBounds`, `testFuzz_extensionsNeverChangeTheCap` |
+| Grandfathering: governance never raises the global cap; extensions do not change the amount | `testFuzz_governanceCannotWorsenAnExistingPosition`, `test_aTopUpUsesTheCurrentGlobalCap`, `testFuzz_extensionsNeverChangeTheCap` |
 | Conservation per token: `accounted == notified − claimed`, `balance ≥ accounted`, `claimed ≤ notified` | `invariant_distributorConservesValue`, `testFuzz_claimsNeverExceedNotifications` |
 | Denominators immutable post-snapshot; exited position never receives own forfeiture | `test_denominatorIsUnchangedByAnExit`, `test_exitingPositionNeverReceivesItsOwnForfeiture` |
 | `exitedWeightByEpoch[e] ≤ supply(e)` | `invariant_exitedWeightNeverExceedsEpochSupply` |
