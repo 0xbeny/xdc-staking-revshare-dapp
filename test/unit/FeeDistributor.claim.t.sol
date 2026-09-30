@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {FeeDistributor} from "../../src/FeeDistributor.sol";
 import {Base} from "../Base.t.sol";
+import {MockERC20} from "../mocks/MockERC20.sol";
 
 contract FeeDistributorClaimTest is Base {
     uint256 internal a;
@@ -226,5 +227,23 @@ contract FeeDistributorClaimTest is Base {
             "held balance always equals accounted value"
         );
         assertEq(distributor.accounted(address(usdc)), notified - claimed);
+    }
+
+    function test_aTokenAddedLateStartsAtTheAddEpoch() public {
+        _warpEpochs(80);
+        MockERC20 late = new MockERC20("Late", "LATE", 18);
+        vm.prank(timelock);
+        distributor.addRewardToken(address(late));
+        uint256 added = distributor.settledEpoch(address(late));
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(late);
+        vm.prank(alice);
+        distributor.claim(a, tokens);
+
+        assertEq(distributor.claimCursor(a, address(late)), added, "one claim skips the empty history");
+        assertEq(
+            distributor.unvestedForfeitCursor(address(late)), added, "harvest skips epochs before the token existed"
+        );
     }
 }
