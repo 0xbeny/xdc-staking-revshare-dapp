@@ -731,13 +731,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
     /// @dev Every lock mutation funnels through here: advance history, swap the contribution,
     ///      record the new user point.
-    function _rewriteLock(uint256 tokenId, Lock memory oldLock, Lock memory newLock) private {
+    function _rewriteLock(uint256 tokenId, address owner, Lock memory oldLock, Lock memory newLock) private {
         _globalCheckpoint();
         if (pointHistory[epoch].ts != block.timestamp) {
             revert HistoryStale();
         }
 
-        address owner = ownerOf(tokenId);
         _checkpointAccount(owner);
         AccountPoint[] storage accountHistory = _accountPointHistory[owner];
         if (accountHistory[accountHistory.length - 1].ts != block.timestamp) {
@@ -969,14 +968,13 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
 
         tokenId = _nextTokenId++;
-        _safeMint(beneficiary, tokenId);
-        _ownedTokens[beneficiary].push(tokenId);
         createdEpoch[tokenId] = EpochTime.currentEpoch();
         firstEligibleEpoch[tokenId] = EpochTime.epochOf(EpochTime.ceilWeek(block.timestamp));
+        _ownedTokens[beneficiary].push(tokenId);
 
         Lock memory newLock =
             Lock({amount: amount.toUint128(), end: unlock.toUint64(), penaltyCapBps: maxPenaltyBps.toUint64()});
-        _rewriteLock(tokenId, Lock({amount: 0, end: 0, penaltyCapBps: 0}), newLock);
+        _rewriteLock(tokenId, beneficiary, Lock({amount: 0, end: 0, penaltyCapBps: 0}), newLock);
 
         // Credit principal from the balance delta, not the nominal amount, so fee-on-transfer
         // tokens cannot desynchronise `totalLocked` from `token.balanceOf(this)`.
@@ -988,6 +986,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         totalLocked += received;
 
+        _safeMint(beneficiary, tokenId);
         emit Deposit(tokenId, _msgSender(), received, unlock);
     }
 
@@ -1000,7 +999,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         }
         _requireWithinStakingCap(amount);
         _requireNoExitRequest(tokenId);
-        (, Lock memory oldLock) = _openLockOf(tokenId);
+        (address owner, Lock memory oldLock) = _openLockOf(tokenId);
         if (oldLock.end <= block.timestamp) {
             revert LockExpired();
         }
@@ -1020,7 +1019,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
         Lock memory newLock =
             Lock({amount: newPrincipal.toUint128(), end: oldLock.end, penaltyCapBps: newCap.toUint64()});
-        _rewriteLock(tokenId, oldLock, newLock);
+        _rewriteLock(tokenId, owner, oldLock, newLock);
 
         totalLocked += received;
 
@@ -1072,7 +1071,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
 
         Lock memory newLock =
             Lock({amount: oldLock.amount, end: unlock.toUint64(), penaltyCapBps: oldLock.penaltyCapBps});
-        _rewriteLock(tokenId, oldLock, newLock);
+        _rewriteLock(tokenId, ownerOf(tokenId), oldLock, newLock);
 
         emit LockExtended(tokenId, oldLock.end, unlock);
     }
@@ -1187,7 +1186,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         uint256 penalty = toLockers + toTreasury;
 
         delete exitRequest[tokenId];
-        _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
         _recordExit(tokenId);
         closed[tokenId] = true;
         totalLocked -= lock.amount;
@@ -1234,7 +1233,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function _payOutMature(uint256 tokenId, address owner, Lock memory lock) private {
         uint256 amount = lock.amount;
         delete exitRequest[tokenId];
-        _rewriteLock(tokenId, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
+        _rewriteLock(tokenId, owner, lock, Lock({amount: 0, end: 0, penaltyCapBps: lock.penaltyCapBps}));
         closed[tokenId] = true;
         totalLocked -= amount;
 

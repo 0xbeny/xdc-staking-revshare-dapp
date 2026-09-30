@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
 import {ZapDepositor} from "../../src/ZapDepositor.sol";
 import {Base} from "../Base.t.sol";
-import {MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
+import {LockReadyCustodian, MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
 
 contract VotingEscrowLockTest is Base {
     function test_createLock_roundsUnlockUpToWeekBoundary() public {
@@ -77,6 +77,21 @@ contract VotingEscrowLockTest is Base {
         uint256 tokenId = zap.lockWXDCFor(address(custodian), 1 ether, 4 weeks);
         vm.stopPrank();
         assertEq(escrow.ownerOf(tokenId), address(custodian));
+    }
+
+    function test_receiverSeesTheFinishedLock() public {
+        LockReadyCustodian custodian = new LockReadyCustodian();
+        vm.prank(timelock);
+        escrow.setTier(address(custodian), VotingEscrow.Tier.CUSTODIAN);
+        wxdc.mint(address(custodian), 100 ether);
+
+        vm.startPrank(address(custodian));
+        wxdc.approve(address(zap), 100 ether);
+        uint256 tokenId = zap.lockWXDC(100 ether, 4 weeks);
+        vm.stopPrank();
+
+        assertEq(escrow.ownerOf(tokenId), address(custodian));
+        assertEq(escrow.locked(tokenId).amount, 100 ether);
     }
 
     /// @dev Whitelisting a contract that cannot hold an ERC721 is a misconfiguration; the mint
