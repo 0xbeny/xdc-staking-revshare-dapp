@@ -344,8 +344,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         emit MaxPenaltyBpsSet(oldValue, newValue);
     }
 
+    /// @dev Monotonically non-increasing, same as the penalty cap: a larger treasury share
+    ///      cannot be turned on after users have already locked.
     function setPenaltySplitBps(uint256 newValue) external onlyTimelock {
-        if (newValue > HARD_MAX_PENALTY_SPLIT_BPS) {
+        if (newValue > penaltySplitBps || newValue > HARD_MAX_PENALTY_SPLIT_BPS) {
             revert ParameterOutOfRange();
         }
         uint256 oldValue = penaltySplitBps;

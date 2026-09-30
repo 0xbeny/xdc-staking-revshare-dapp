@@ -287,7 +287,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         vm.startPrank(TIMELOCK);
         // Global penalty is monotonically non-increasing.
         ESCROW.setMaxPenaltyBps(bound(cap, 0, ESCROW.maxPenaltyBps()));
-        ESCROW.setPenaltySplitBps(bound(split, 0, 5000));
+        ESCROW.setPenaltySplitBps(bound(split, 0, ESCROW.penaltySplitBps()));
         vm.stopPrank();
     }
 

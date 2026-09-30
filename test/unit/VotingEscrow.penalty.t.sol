@@ -272,6 +272,17 @@ contract VotingEscrowPenaltyTest is Base {
         vm.stopPrank();
     }
 
+    function test_penaltySplitCannotIncrease() public {
+        uint256 current = escrow.penaltySplitBps();
+        vm.startPrank(timelock);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setPenaltySplitBps(current + 1);
+        escrow.setPenaltySplitBps(current);
+        escrow.setPenaltySplitBps(current / 2);
+        vm.stopPrank();
+        assertEq(escrow.penaltySplitBps(), current / 2);
+    }
+
     function test_onlyTimelockCanTouchParameters() public {
         vm.startPrank(alice);
         vm.expectRevert(VotingEscrow.NotTimelock.selector);
