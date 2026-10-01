@@ -155,7 +155,7 @@
     ],
     "outputs": [
       {
-        "name": "total",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -174,7 +174,7 @@
     ],
     "outputs": [
       {
-        "name": "total",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }

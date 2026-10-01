@@ -173,6 +173,30 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "accountSlopeChanges",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "weekStart",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int128",
+        "internalType": "int128"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "approve",
     "inputs": [
       {
@@ -188,6 +212,25 @@ export const VotingEscrowAbi = [
     ],
     "outputs": [],
     "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "autoExtend",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -294,6 +337,19 @@ export const VotingEscrowAbi = [
     "type": "function",
     "name": "checkpoint",
     "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "checkpointAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -415,25 +471,6 @@ export const VotingEscrowAbi = [
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "effectivePenaltyCapBps",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -701,30 +738,6 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
-    "name": "isOperator",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "operator",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "keepAtMaxLock",
     "inputs": [
       {
@@ -759,11 +772,6 @@ export const VotingEscrowAbi = [
           },
           {
             "name": "end",
-            "type": "uint64",
-            "internalType": "uint64"
-          },
-          {
-            "name": "penaltyCapBps",
             "type": "uint64",
             "internalType": "uint64"
           }
@@ -1011,6 +1019,24 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "setAutoExtend",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setCapGuardian",
     "inputs": [
       {
@@ -1043,24 +1069,6 @@ export const VotingEscrowAbi = [
         "name": "newValue",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setOperator",
-    "inputs": [
-      {
-        "name": "operator",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "approved",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -1385,6 +1393,25 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "unvestedForfeitWeight",
+    "inputs": [
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "userPointAt",
     "inputs": [
       {
@@ -1474,6 +1501,49 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "function",
+    "name": "weightOf",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "weightOfAt",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "withdraw",
     "inputs": [
       {
@@ -1560,6 +1630,25 @@ export const VotingEscrowAbi = [
       },
       {
         "name": "approved",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AutoExtendSet",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "enabled",
         "type": "bool",
         "indexed": false,
         "internalType": "bool"
@@ -1785,56 +1874,6 @@ export const VotingEscrowAbi = [
       },
       {
         "name": "newValue",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "OperatorSet",
-    "inputs": [
-      {
-        "name": "owner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "operator",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "approved",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "PenaltyCapUpdated",
-    "inputs": [
-      {
-        "name": "tokenId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "oldCap",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "newCap",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2178,6 +2217,11 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "LockMaturesDuringCooldown",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "LockNotExpired",
     "inputs": []
   },
@@ -2203,7 +2247,17 @@ export const VotingEscrowAbi = [
   },
   {
     "type": "error",
+    "name": "NotOptedIn",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NotTimelock",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OutsideKeeperWindow",
     "inputs": []
   },
   {
