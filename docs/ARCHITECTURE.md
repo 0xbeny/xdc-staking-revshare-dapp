@@ -142,6 +142,10 @@ including inside the clamped region.
   itself, not a `(bias, slope)` pair. `balanceOfNFTAt(id, t)` binary-searches for the last point
   at or before `t` and recomputes the clamped formula. Historic weight can therefore never drift
   from the formula, and it survives the position being zeroed later.
+- **Per account:** `_accountPointHistory[owner]` stores `(bias, slope, ts)`, one entry per lock
+  mutation or `checkpointAccount`. Idle weeks are walked in memory over `accountSlopeChanges`,
+  and `weightOfAt` walks the same way from the last entry at or before `t`. An account with no
+  live weight jumps straight to `now`, so an idle owner can always exit without extra checkpoints.
 
 ### Exit cooldown (mature `withdraw` and `emergencyExit`)
 
@@ -150,11 +154,14 @@ hard-capped at 7 days via `HARD_MAX_WITHDRAWAL_COOLDOWN`):
 
 1. **Request** — `requestWithdraw` / `requestEmergencyExit`, or the first call to
    `withdraw` / `emergencyExit` when no request is pending. Early-exit penalty is
-   **snapshotted at request**. While a request is pending, amount/unlock increases revert.
+   **snapshotted at request**. While a request is pending, amount/unlock increases revert. An
+   early exit cannot be requested in the last `withdrawalCooldown` of a lock
+   (`LockMaturesDuringCooldown`).
 2. **Finalize** — after the snapshotted `readyAt` (request time + then-current
    `withdrawalCooldown`), a subsequent `withdraw` / `emergencyExit` (or the same call when
    cooldown is `0`) moves principal. Later governance changes to `withdrawalCooldown` do not
-   move a pending request's deadline.
+   move a pending request's deadline. An early exit whose lock has matured by then pays like
+   `withdraw`: full principal, no `exitEpoch`.
 
 `cancelExitRequest` clears a pending request with no funds moved.
 
@@ -173,7 +180,8 @@ toLockers  = penalty − toTreasury                 → transferred to the distr
 clamped by the immutable constants `HARD_MAX_PENALTY_BPS = 5000` and
 `HARD_MAX_PENALTY_SPLIT_BPS = 5000`. The two destinations are `immutable`. There is no
 PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers
-(after the cooldown finalize step).
+(after the cooldown finalize step). `penaltySplitBps` can only be lowered, so the lockers'
+share of a penalty never shrinks.
 
 **Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance may only
 **lower** `maxPenaltyBps` (monotonically non-increasing); raises revert. Lowering helps
@@ -201,8 +209,8 @@ the fraction and forfeits nothing.
 
 `withdraw` and `emergencyExit` zero the lock and mark the position `closed`, but the NFT stays
 with its owner. Already-finalized epochs remain claimable through the distributor after either
-exit. **`exitEpoch` is recorded only for `emergencyExit`** (early exit forfeits the in-progress
-epoch). Mature `withdraw` needs no such marker — weight is already zero after expiry.
+exit. **`exitEpoch` is recorded only for an `emergencyExit` that finalizes before maturity**
+(early exit forfeits the in-progress epoch). Mature `withdraw` needs no such marker — weight is already zero after expiry.
 
 ### Operators
 
@@ -249,7 +257,7 @@ walks at most `MAX_EPOCHS_PER_CLAIM = 52` epochs per token, from the position's 
 `min(settledEpoch, exitEpoch)`. It returns `remaining > 0` when **closed** epochs still sit
 ahead of the cursor (the open epoch is excluded). That signal includes closed-but-unsettled
 epochs so a bounded `settle` inside `claim` still prompts another call. The cursor starts at
-`firstEligibleEpoch`.
+`firstEligibleEpoch`, or at the epoch the token was added (`tokenAddedEpoch`) if that is later.
 
 `claimAndLock` claims WXDC and folds it straight back via `increaseAmount` — so the
 weighted-cap rule applies — and degrades to a plain claim when the lock has expired or closed,

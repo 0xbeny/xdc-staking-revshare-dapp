@@ -99,10 +99,11 @@ contract VeVotesAdapterTest is Base {
 
         vm.warp(block.timestamp + 8 weeks);
         marks[n++] = block.timestamp;
-        vm.startPrank(bob);
+        vm.prank(bob);
         escrow.setAutoExtend(b0, true);
+        _intoKeeperWindow();
+        vm.prank(bob);
         escrow.keepAtMaxLock(b0);
-        vm.stopPrank();
         _assertAccountMatchesLegacy(bob);
 
         _completeEmergencyExit(alice, a0);

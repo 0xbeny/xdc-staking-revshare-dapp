@@ -55,7 +55,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     ///         Early exit forfeits the weeks that have not finished the wait.
     uint256 public constant VESTING_EPOCHS = Constants.VESTING_EPOCHS;
     /// @notice Pre-boundary keeper window (§5): the last two hours of an epoch.
-    uint256 public constant KEEPER_WINDOW = 2 hours;
+    uint256 public constant KEEPER_WINDOW = Constants.KEEPER_WINDOW;
 
     /*//////////////////////////////////////////////////////////////
                                  STORAGE
@@ -108,11 +108,15 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     ///         no later exit can add weight to it.
     mapping(address token => uint256) public unvestedForfeitCursor;
 
+    /// @notice Epoch in which this reward token was listed. Cursors start here so a token
+    ///         added years later does not walk the empty history in 52-epoch pages.
+    mapping(address token => uint256) public tokenAddedEpoch;
+
     // Reserved storage for future upgrades; intentionally never read.
-    // One slot of the original gap now holds `appliedUnvestedForfeit`.
+    // Two slots of the original 40 now hold `unvestedForfeitCursor` and `tokenAddedEpoch`.
     // forge-lint: disable-start(mixed-case-variable, unused-state-variables)
     // slither-disable-next-line unused-state
-    uint256[39] private __gap;
+    uint256[38] private __gap;
     // forge-lint: disable-end(mixed-case-variable, unused-state-variables)
 
     /*//////////////////////////////////////////////////////////////
@@ -202,7 +206,9 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
         isRewardToken[token] = true;
         acceptingRevenue[token] = true;
-        settledEpoch[token] = EpochTime.currentEpoch();
+        uint256 added = EpochTime.currentEpoch();
+        settledEpoch[token] = added;
+        tokenAddedEpoch[token] = added;
         _rewardTokens.push(token);
         emit RewardTokenAdded(token);
     }
@@ -545,8 +551,9 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     function _harvestUnvested(address token) internal {
         uint256 current = EpochTime.currentEpoch();
         uint256 cursor = unvestedForfeitCursor[token];
-        if (cursor < startEpoch) {
-            cursor = startEpoch;
+        uint256 floor = _tokenFloor(token);
+        if (cursor < floor) {
+            cursor = floor;
         }
         uint256 settled = settledEpoch[token];
         uint256 processed = 0;
@@ -586,7 +593,15 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
             return cursor;
         }
         uint256 first = escrow.firstEligibleEpoch(tokenId);
-        return first > startEpoch ? first : startEpoch;
+        uint256 floor = _tokenFloor(token);
+        return first > floor ? first : floor;
+    }
+
+    /// @dev Existing tokens keep `startEpoch` (their add epoch was never stored). A token
+    ///      listed later starts at that epoch.
+    function _tokenFloor(address token) internal view returns (uint256) {
+        uint256 added = tokenAddedEpoch[token];
+        return added > startEpoch ? added : startEpoch;
     }
 
     /// @dev An exited position keeps every already-finalized epoch and loses everything from its

@@ -108,6 +108,7 @@ contract PenaltyFuzzTest is Base {
 
         vm.prank(alice);
         escrow.setAutoExtend(tokenId, true);
+        _intoKeeperWindow();
         vm.prank(alice);
         escrow.keepAtMaxLock(tokenId);
         assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore);
@@ -116,7 +117,7 @@ contract PenaltyFuzzTest is Base {
     /// @dev The penalty split always sums back to the whole penalty, treasury share capped.
     function testFuzz_penaltySplitConservesTheWholePenalty(uint128 amount, uint16 splitBps, uint16 weeksToLock) public {
         amount = uint128(bound(amount, 1 ether, 1_000_000 ether));
-        uint256 split = bound(splitBps, 0, 5000);
+        uint256 split = bound(splitBps, 0, escrow.penaltySplitBps());
         vm.prank(timelock);
         escrow.setPenaltySplitBps(split);
 

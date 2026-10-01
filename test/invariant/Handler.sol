@@ -41,6 +41,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 tokenId => mapping(address token => uint256)) public ghostMaxCursor;
     uint256 public cursorViolations;
     uint256 public forfeitedPaidViolations;
+    uint256 public maturedExitViolations;
 
     constructor(
         VotingEscrow escrow_,
@@ -81,6 +82,15 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         return tokenIds.length;
     }
 
+    function _pendingExit(uint256 tokenId) internal view returns (VotingEscrow.ExitKind kind, uint64 readyAt) {
+        (readyAt, kind,,,,) = ESCROW.exitRequest(tokenId);
+    }
+
+    function _hasPendingExit(uint256 tokenId) internal view returns (bool) {
+        (VotingEscrow.ExitKind kind,) = _pendingExit(tokenId);
+        return kind != VotingEscrow.ExitKind.None;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 ACTIONS
     //////////////////////////////////////////////////////////////*/
@@ -107,7 +117,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
     function increaseAmount(uint256 tokenSeed, uint96 amount) external {
         uint256 tokenId = _tokenId(tokenSeed);
-        if (tokenId == 0 || ESCROW.closed(tokenId)) {
+        if (tokenId == 0 || ESCROW.closed(tokenId) || _hasPendingExit(tokenId)) {
             return;
         }
         if (ESCROW.locked(tokenId).end <= block.timestamp) {
@@ -162,7 +172,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
     function extendLock(uint256 tokenSeed, uint8 weeksToAdd) external {
         uint256 tokenId = _tokenId(tokenSeed);
-        if (tokenId == 0 || ESCROW.closed(tokenId)) {
+        if (tokenId == 0 || ESCROW.closed(tokenId) || _hasPendingExit(tokenId)) {
             return;
         }
         VotingEscrow.Lock memory lock = ESCROW.locked(tokenId);
@@ -179,42 +189,68 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         ESCROW.increaseUnlockTime(tokenId, target);
     }
 
+    /// @dev First call arms the request; it pays out in the same call only when cooldown is 0.
     function withdraw(uint256 tokenSeed) external {
         uint256 tokenId = _tokenId(tokenSeed);
         if (tokenId == 0 || ESCROW.closed(tokenId)) {
             return;
         }
         VotingEscrow.Lock memory lock = ESCROW.locked(tokenId);
-        if (lock.amount == 0 || lock.end > block.timestamp) {
+        (VotingEscrow.ExitKind kind, uint64 readyAt) = _pendingExit(tokenId);
+        if (kind == VotingEscrow.ExitKind.Emergency) {
+            return;
+        }
+        if (kind == VotingEscrow.ExitKind.None ? lock.end > block.timestamp : block.timestamp < readyAt) {
             return;
         }
 
         vm.prank(ESCROW.ownerOf(tokenId));
         ESCROW.withdraw(tokenId);
-        ghostWithdrawn += lock.amount;
+        if (ESCROW.closed(tokenId)) {
+            ghostWithdrawn += lock.amount;
+        }
     }
 
+    /// @dev Arms or finalizes. A request may stay pending past maturity, which must then pay
+    ///      like a withdraw. Principal is booked from the balance change, not the live quote.
     function emergencyExit(uint256 tokenSeed) external {
         uint256 tokenId = _tokenId(tokenSeed);
         if (tokenId == 0 || ESCROW.closed(tokenId)) {
             return;
         }
         VotingEscrow.Lock memory lock = ESCROW.locked(tokenId);
-        if (lock.amount == 0 || lock.end <= block.timestamp) {
+        (VotingEscrow.ExitKind kind, uint64 readyAt) = _pendingExit(tokenId);
+        if (kind == VotingEscrow.ExitKind.Withdraw) {
+            return;
+        }
+        if (kind == VotingEscrow.ExitKind.None) {
+            if (lock.end <= block.timestamp || lock.end - block.timestamp <= ESCROW.withdrawalCooldown()) {
+                return;
+            }
+        } else if (block.timestamp < readyAt) {
             return;
         }
 
-        (uint256 returned, uint256 penalty,) = ESCROW.previewExit(tokenId);
+        address owner = ESCROW.ownerOf(tokenId);
+        bool matured = lock.end <= block.timestamp;
         uint256 exitEpoch = block.timestamp / WEEK;
         uint256[FORFEIT_LOOKBACK] memory before;
         for (uint256 k; k < FORFEIT_LOOKBACK; ++k) {
             before[k] = ESCROW.unvestedForfeitWeight(exitEpoch - 1 - k);
         }
 
-        vm.prank(ESCROW.ownerOf(tokenId));
+        uint256 ownerBefore = WXDC.balanceOf(owner);
+        vm.prank(owner);
         ESCROW.emergencyExit(tokenId);
-        ghostWithdrawn += returned;
-        ghostPenalised += penalty;
+        if (!ESCROW.closed(tokenId)) {
+            return;
+        }
+        uint256 received = WXDC.balanceOf(owner) - ownerBefore;
+        ghostWithdrawn += received;
+        ghostPenalised += lock.amount - received;
+        if (matured && (received != lock.amount || ESCROW.exitEpoch(tokenId) != 0)) {
+            maturedExitViolations++;
+        }
 
         // Any epoch this exit forfeited must be one the position has not been paid for.
         for (uint256 k; k < FORFEIT_LOOKBACK; ++k) {
@@ -287,7 +323,7 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         vm.startPrank(TIMELOCK);
         // Global penalty is monotonically non-increasing.
         ESCROW.setMaxPenaltyBps(bound(cap, 0, ESCROW.maxPenaltyBps()));
-        ESCROW.setPenaltySplitBps(bound(split, 0, 5000));
+        ESCROW.setPenaltySplitBps(bound(split, 0, ESCROW.penaltySplitBps()));
         vm.stopPrank();
     }
 
@@ -315,6 +351,21 @@ contract Handler is CommonBase, StdCheats, StdUtils {
 
         vm.prank(admin);
         ESCROW.setStakingCap(newCap);
+    }
+
+    function setCooldown(uint32 raw) external {
+        uint256 cooldown = bound(raw, 0, ESCROW.HARD_MAX_WITHDRAWAL_COOLDOWN());
+        vm.prank(TIMELOCK);
+        ESCROW.setWithdrawalCooldown(cooldown);
+    }
+
+    function cancelExit(uint256 tokenSeed) external {
+        uint256 tokenId = _tokenId(tokenSeed);
+        if (tokenId == 0 || ESCROW.closed(tokenId) || !_hasPendingExit(tokenId)) {
+            return;
+        }
+        vm.prank(ESCROW.ownerOf(tokenId));
+        ESCROW.cancelExitRequest(tokenId);
     }
 
     function warp(uint32 secondsForward) external {

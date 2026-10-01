@@ -55,14 +55,16 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
   `requestWithdraw` / `requestEmergencyExit`) arms the exit and **snapshots `readyAt`**; after
   that deadline, a subsequent call pays out. Later cooldown changes do not move pending
   requests. Early-exit penalty is also snapshotted at request. `cancelExitRequest` aborts with
-  no funds moved. When cooldown is `0`, a single call still completes.
+  no funds moved. When cooldown is `0`, a single call still completes. An early exit cannot be
+  armed in the last `withdrawalCooldown` of a lock (it would mature first), and a pending early
+  exit finalized after maturity pays like `withdraw`: full principal, nothing forfeited.
 - **No split, no merge (#2).** Multiple maturities = multiple positions. This deletes checkpoint lineage, reward-debt migration, forced-settlement plumbing, and the mid-epoch entitlement-migration problem from the immutable core entirely.
 
 **Soulbound (#9 — Option B):** `transferFrom`/`safeTransferFrom` revert unconditionally. **There is no `wrapInto` and no transfer carve-out of any kind.** The future stveXDC wrapper accepts only new WXDC deposits; existing veNFT positions are never wrappable. Migration path for existing lockers is natural: every position expires within ≤ 104 weeks, after which the holder can withdraw and re-deposit into the wrapper if they prefer the liquid lane. This keeps v1's escrow free of any underspecified future-module code.
 
 **Contract eligibility (#10):** EOAs (checked as `code.length == 0` at lock time) need no whitelist; contracts require the `CUSTODIAN` (Safes: create + hold own locks) or `WRAPPER` (empty at launch) tier, timelock-added. **Stated honestly:** this is a *protocol-support policy*, not a cryptographic guarantee — a counterfactual CREATE2 address has no code before deployment, so a position could be created for an address that later becomes a contract. Threat model: with soulbound NFTs, no `wrapInto`, and per-tokenId claims, such a contract can hold and claim for its own position (equivalent to an EOA doing the same) and could at most offer off-chain pooled exposure — the same residual risk already accepted for custodians. Monitored (Hermes flags locks to empty-code addresses that later gain code), not claimed impossible.
 
-**Penalty parameters live here (#11):** `maxPenaltyBps` and `penaltySplitBps` are storage variables in the escrow, settable **only by the timelock**, clamped by immutable constants (`HARD_MAX_PENALTY_BPS = 5000`; treasury share ≤ 50%). Penalty destinations (distributor forfeiture bucket, treasury) are immutable addresses. There is no PenaltyManager contract. `emergencyExit` reads only escrow storage — no external call, no liveness dependency, nothing upgradeable on the path.
+**Penalty parameters live here (#11):** `maxPenaltyBps` and `penaltySplitBps` are storage variables in the escrow, settable **only by the timelock**, clamped by immutable constants (`HARD_MAX_PENALTY_BPS = 5000`; treasury share ≤ 50%), and both can only be lowered. Penalty destinations (distributor forfeiture bucket, treasury) are immutable addresses. There is no PenaltyManager contract. `emergencyExit` reads only escrow storage — no external call, no liveness dependency, nothing upgradeable on the path.
 
 Checkpointed `balanceOfNFTAt` / `totalSupplyAt` reads; Curve-style linear-decay weight forked from an audited reference, diff-documented; time-based weighting only.
 
@@ -151,7 +153,7 @@ Foundry invariants first-class; fork audited escrow references, audit the diff; 
 - Claims: cursor monotonic, `MAX_EPOCHS_PER_CLAIM` bound respected, repeated claims idempotent, no epoch double-paid across cursor pages.
 - B2/B3: fee Safe balance == 0 after successful sweep; double-skim moves zero.
 - Mode C: `(dapp, token, sourceEpoch)` unique and immutable; amount == transferred atomically; reporter cannot set distributionEpoch; adjustments never pull from the distributor.
-- Keeper: epoch guards revert stale txs; `keepAtMaxLock` outside the pre-boundary window has no retroactive effect; compound degrades to a plain claim at/after expiry, while an exit is pending, or when the staking cap has no room, so one position never reverts a keeper batch.
+- Keeper: epoch guards revert stale txs; `keepAtMaxLock` reverts outside the pre-boundary window, in the escrow as well as in the batch; compound degrades to a plain claim at/after expiry, while an exit is pending, or when the staking cap has no room, so one position never reverts a keeper batch.
 
 **Audit path & launch controls:** unchanged (primary audit → contest → upgradeable-path review → Immunefi; weekly TVL caps, rate limits, guardian pause, Hermes monitoring).
 

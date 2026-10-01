@@ -233,8 +233,10 @@ contract VotingEscrowPenaltyTest is Base {
         vm.startPrank(alice);
         escrow.increaseUnlockTime(tokenId, block.timestamp + 52 weeks);
         escrow.setAutoExtend(tokenId, true);
-        escrow.keepAtMaxLock(tokenId);
         vm.stopPrank();
+        _intoKeeperWindow();
+        vm.prank(alice);
+        escrow.keepAtMaxLock(tokenId);
 
         assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore, "a keeper convenience flag is not consent");
     }
@@ -250,6 +252,7 @@ contract VotingEscrowPenaltyTest is Base {
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(500);
 
+        _intoKeeperWindow();
         vm.prank(keeper);
         escrow.keepAtMaxLock(tokenId);
 
@@ -267,6 +270,17 @@ contract VotingEscrowPenaltyTest is Base {
         vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
         escrow.setPenaltySplitBps(5001);
         vm.stopPrank();
+    }
+
+    function test_penaltySplitCannotIncrease() public {
+        uint256 current = escrow.penaltySplitBps();
+        vm.startPrank(timelock);
+        vm.expectRevert(VotingEscrow.ParameterOutOfRange.selector);
+        escrow.setPenaltySplitBps(current + 1);
+        escrow.setPenaltySplitBps(current);
+        escrow.setPenaltySplitBps(current / 2);
+        vm.stopPrank();
+        assertEq(escrow.penaltySplitBps(), current / 2);
     }
 
     function test_onlyTimelockCanTouchParameters() public {

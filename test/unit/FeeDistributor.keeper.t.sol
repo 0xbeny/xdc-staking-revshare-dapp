@@ -21,10 +21,6 @@ contract FeeDistributorKeeperTest is Base {
         _nextEpoch();
     }
 
-    function _intoKeeperWindow() internal {
-        vm.warp(_epochStart(_currentEpoch() + 1) - 1 hours);
-    }
-
     function _ids() internal view returns (uint256[] memory ids) {
         ids = new uint256[](1);
         ids[0] = a;

@@ -8,7 +8,7 @@
 | **Operator** (user-approved) | `increaseUnlockTime` on that user's positions | compound / `claimAndLock`, move principal, anything else |
 | **Keeper** (`KEEPER_ROLE`) | extend opted-in locks in the window, compound opted-in rewards (`autoCompound`) | move principal, redirect claims, change parameters |
 | **Guardian** (`PAUSER_ROLE` on distributor; escrow `capGuardian`) | pause the distributor; raise/lower escrow `stakingCap` (decreases only if `totalLocked < newCap`) | unpause, move principal, change penalty params, upgrade contracts |
-| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | **lower** `maxPenaltyBps` / tune `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter, set/raise/lower `stakingCap`, rotate `capGuardian` | move principal, change penalty destinations, **raise** `maxPenaltyBps`, raise an existing position's cap, bypass the clamps, upgrade the escrow |
+| **Timelock** (`DEFAULT_ADMIN`, `UPGRADER`, `REGISTRY_ADMIN`, escrow `timelock`) | **lower** `maxPenaltyBps` / `penaltySplitBps` within immutable clamps, set eligibility tiers, register/deactivate adapters, add reward tokens, unpause, upgrade the two UUPS contracts, rotate the Mode C reporter, set/raise/lower `stakingCap`, rotate `capGuardian` | move principal, change penalty destinations, **raise** `maxPenaltyBps` or `penaltySplitBps`, raise an existing position's cap, bypass the clamps, upgrade the escrow |
 | **Reporter** (Mode C) | post one immutable record + transfer per period | choose a distribution epoch, edit a record, pull from the distributor |
 | **Adapter** (registered) | notify revenue for the tokens it supports | anything once deactivated |
 
@@ -46,6 +46,7 @@ transferable) whose powers are clamped by constants.
 | Conservation per token: `accounted == notified − claimed`, `balance ≥ accounted`, `claimed ≤ notified` | `invariant_distributorConservesValue`, `testFuzz_claimsNeverExceedNotifications` |
 | Denominators immutable post-snapshot; exited position never receives own forfeiture | `test_denominatorIsUnchangedByAnExit`, `test_exitingPositionNeverReceivesItsOwnForfeiture` |
 | `exitedWeightByEpoch[e] ≤ supply(e)` | `invariant_exitedWeightNeverExceedsEpochSupply` |
+| Early exit finalized after maturity pays full principal and forfeits nothing | `invariant_maturedEarlyExitsPayInFull`, `test_aMaturedEarlyExitEarnsTheSameAsAWithdraw` |
 | Effective lock ≥ MIN_LOCK, week-aligned | `testFuzz_effectiveLockIsAtLeastMinLock` |
 | Soulbound: no transfer path; no `wrapInto`, split or merge | `VotingEscrow.soulbound.t.sol` |
 | Claims: cursor monotonic, bounded, idempotent, no double-pay across pages | `invariant_claimCursorsAreMonotonic`, `testFuzz_pagedClaimsSumToTheSameTotal`, `testFuzz_repeatedClaimsAreIdempotent` |

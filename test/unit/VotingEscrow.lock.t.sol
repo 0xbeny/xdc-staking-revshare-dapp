@@ -178,6 +178,10 @@ contract VotingEscrowLockTest is Base {
 
         vm.prank(alice);
         escrow.setAutoExtend(tokenId, true);
+        vm.expectRevert(VotingEscrow.OutsideKeeperWindow.selector);
+        escrow.keepAtMaxLock(tokenId);
+
+        vm.warp(_epochStart(_currentEpoch() + 1) - 1 hours);
         escrow.keepAtMaxLock(tokenId);
         assertGt(escrow.locked(tokenId).end, block.timestamp + 100 weeks);
 
@@ -185,6 +189,27 @@ contract VotingEscrowLockTest is Base {
         escrow.setAutoExtend(tokenId, false);
         vm.expectRevert(VotingEscrow.NotOptedIn.selector);
         escrow.keepAtMaxLock(tokenId);
+    }
+
+    function test_keepAtMaxLock_onlyInsideTheKeeperWindow() public {
+        uint256 tokenId = _lock(alice, 100 ether, 20 weeks);
+        vm.prank(alice);
+        escrow.setAutoExtend(tokenId, true);
+        uint256 epochEnd = _epochStart(_currentEpoch() + 1);
+        uint256 window = distributor.KEEPER_WINDOW();
+
+        vm.warp(epochEnd - window - 1);
+        vm.expectRevert(VotingEscrow.OutsideKeeperWindow.selector);
+        escrow.keepAtMaxLock(tokenId);
+
+        vm.warp(epochEnd - window);
+        escrow.keepAtMaxLock(tokenId);
+        uint256 extendedTo = escrow.locked(tokenId).end;
+
+        vm.warp(epochEnd);
+        vm.expectRevert(VotingEscrow.OutsideKeeperWindow.selector);
+        escrow.keepAtMaxLock(tokenId);
+        assertEq(escrow.locked(tokenId).end, extendedTo);
     }
 
     function test_distributorCannotForceExtendWhenAutoExtendOff() public {
