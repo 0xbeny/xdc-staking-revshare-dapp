@@ -244,7 +244,7 @@ Deposit calls `Zap.zapCreateLock{value}(durationSeconds)` where `durationSeconds
 One purpose per control group:
 
 1. **Increase** — native XDC via `zap.zapIncreaseAmount{value}(tokenId)`
-2. **Extend** — weeks remaining → `escrow.increaseUnlockTime` or `keepAtMaxLock`
+2. **Extend** — weeks remaining → `escrow.increaseUnlockTime`. Auto-extend is `escrow.setAutoExtend`.
 3. **Claim** — `distributor.claim(tokenId, rewardTokens)`
 4. **Claim & lock** — `distributor.claimAndLock(tokenId)`
 5. **Exit** — request withdraw / emergency → cooldown countdown → finalize; cancel when pending

@@ -24,7 +24,6 @@ const ExitKind = {
 type LockTuple = {
   amount: bigint;
   end: bigint | number;
-  penaltyCapBps: bigint | number;
 };
 
 type ExitTuple = {

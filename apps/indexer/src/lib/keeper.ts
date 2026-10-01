@@ -36,7 +36,7 @@ function chunkIds(ids: bigint[], size: number): bigint[][] {
 
 async function optedInTokenIds(
   chainId: number,
-  eventName: "KeepAtMaxLockSet" | "AutoCompoundSet",
+  eventName: "AutoExtendSet" | "AutoCompoundSet",
 ): Promise<bigint[]> {
   const db = getDb();
   const rows = await db
@@ -120,7 +120,7 @@ export async function runKeeper(): Promise<KeeperResult> {
 
   // Pre-boundary extensions: Wednesday 22:00–24:00 UTC for Thursday epochs.
   if (inKeepWindow) {
-    const keepIds = await optedInTokenIds(chainId, "KeepAtMaxLockSet");
+    const keepIds = await optedInTokenIds(chainId, "AutoExtendSet");
     if (keepIds.length > 0) {
       const hashes: Hex[] = [];
       for (const chunk of chunkIds(keepIds, batchSize)) {

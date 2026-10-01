@@ -156,7 +156,7 @@ export const VeVotesAdapterAbi = [
     ],
     "outputs": [
       {
-        "name": "total",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -175,7 +175,7 @@ export const VeVotesAdapterAbi = [
     ],
     "outputs": [
       {
-        "name": "total",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }

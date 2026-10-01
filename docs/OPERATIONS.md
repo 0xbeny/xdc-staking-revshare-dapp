@@ -14,7 +14,7 @@ Epochs are weeks starting Thursday 00:00 UTC. Let `n` be the current epoch and
 |---|---|---|
 | Continuously | `skim(token)` on every Mode B / B2 / B3 adapter with a balance | Permissionless. Revenue is attributed to the epoch it *lands* in. |
 | Continuously | `syncForfeiture(token)` after any `EmergencyExit` event | Also runs inside every claim and settle, so this is an optimisation not a dependency. |
-| `boundary − 2h` → `boundary` | `batchKeepAtMaxLock(ids, n)` for every position with `keepAtMaxLock == true` | **Must** land before the boundary. Reverts with `OutsideKeeperWindow` earlier and `StaleEpoch` later. A missed window is never corrected retroactively. |
+| `boundary − 2h` → `boundary` | `batchKeepAtMaxLock(ids, n)` for every position with `autoExtend` on | **Must** land before the boundary. Reverts with `OutsideKeeperWindow` earlier and `StaleEpoch` later. A missed window is never corrected retroactively. |
 | `boundary − 2h` → `boundary` | Final sweep pass on all adapters | SLA target only. A miss shifts revenue to `n+1`; it never backdates. |
 | after `boundary` | `settle(token, 52)` for each reward token | Permissionless. Finalises `n`, moves exited shares and carry-forward into `n+1`. |
 | after `boundary` | `batchCompound(ids, n+1)` for every position with `autoCompound == true` | Compounds first earn in the *next* snapshot. |
@@ -23,11 +23,10 @@ Epochs are weeks starting Thursday 00:00 UTC. Let `n` be the current epoch and
 ## Finding positions
 
 - `escrow.tokensOfOwner(owner)` enumerates an owner's positions.
-- `KeepAtMaxLockSet` / `AutoCompoundSet` events on the distributor are the source of truth for
+- `AutoExtendSet` on the escrow and `AutoCompoundSet` on the distributor are the source of truth for
   the opt-in sets. Rebuild them from logs on start-up.
-- A position can be extended by the keeper only if its owner also called
-  `escrow.setOperator(distributor, true)`. `batchKeepAtMaxLock` emits
-  `KeeperExtended(tokenId, false)` for any it could not extend; surface those to the user.
+- A position is extended by the keeper only while `autoExtend` is on. No operator approval is required.
+  `batchKeepAtMaxLock` emits `KeeperExtended(tokenId, false)` for any it could not extend; surface those to the user.
 
 ## Monitoring (SPEC §7)
 

@@ -122,6 +122,25 @@ export const ZodiacFeeModuleAbi = [
   },
   {
     "type": "function",
+    "name": "pendingCommitted",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "skim",
     "inputs": [
       {

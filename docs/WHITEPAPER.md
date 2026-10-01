@@ -115,12 +115,11 @@ on — and gives `weight ≤ principal` unconditionally.
 Decay is a feature — it prices commitment — but passive decay is inconvenient for
 long-horizon holders. Three consent-based mechanisms address this:
 
-- **`increaseUnlockTime`** — the owner (or an approved operator) re-extends the lock.
-- **`keepAtMaxLock`** — an opt-in flag: a keeper re-extends the position to maximum every
-  week, in a fixed window before the weekly snapshot, so opted-in positions are always
-  snapshotted at full weight. Operators can *only* extend locks — never withdraw, exit,
-  claim, or redirect funds — and the flag is revocable at any time.
-- **`autoCompound`** — an opt-in flag: claimed WXDC rewards are folded back into the
+- **`increaseUnlockTime`** — the owner re-extends the lock at any time.
+- **`keepAtMaxLock`** — while `autoExtend` is on, a keeper re-extends the position to maximum in the
+  last two hours of each epoch, so the next snapshot sees full weight. The owner turns that on
+  with `setAutoExtend` and can turn it off again.
+- **`autoCompound`** — an opt-in flag on the distributor: claimed WXDC rewards are folded back into the
   position's principal each week.
 
 Together these make "lock and forget" viable: a user locks once, opts into both flags, and

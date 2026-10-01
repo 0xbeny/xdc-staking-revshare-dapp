@@ -127,32 +127,29 @@ Alice → escrow.increaseUnlockTime(7, block.timestamp + 104 weeks)
 
 Unlock rounds **up** to a week boundary; must be strictly later; cannot exceed `now + MAX_LOCK`.
 
-### 3.2 Keeper convenience — one-shot max
+### 3.2 Max lock, once
 
 ```text
-Alice → escrow.keepAtMaxLock(7)
-  // == increaseUnlockTime(7, now + MAX_LOCK)
+Alice → escrow.increaseUnlockTime(7, block.timestamp + 104 weeks)
 ```
 
-### 3.3 Set-and-forget max weight (operator + flag)
+### 3.3 Set-and-forget max weight
 
 ```text
-Alice → escrow.setOperator(FeeDistributor, true)
-Alice → distributor.setKeepAtMaxLock(7, true)
+Alice → escrow.setAutoExtend(7, true)
 // each week, last ~2h before boundary:
 Hermes → distributor.batchKeepAtMaxLock([7, …], expectedEpoch)
 ```
 
-If Hermes misses the window, that week’s snapshot keeps the **decayed** weight — no backfill.
+`keepAtMaxLock` reverts outside that window. If Hermes misses it, that week's snapshot keeps the **decayed** weight.
 
-### 3.4 Revoke operator / stop auto-extend
+### 3.4 Stop auto-extend
 
 ```text
-Alice → escrow.setOperator(FeeDistributor, false)
-Alice → distributor.setKeepAtMaxLock(7, false)
+Alice → escrow.setAutoExtend(7, false)
 ```
 
-Unlock stops sliding; position will eventually mature.
+Do this outside the last two hours of the epoch. Inside that window a keeper call can still land first.
 
 ### 3.5 Passive decay (do nothing)
 
@@ -317,10 +314,9 @@ Alice wants max share + auto compound + claims to cold storage:
 
 ```text
 1. Zap.lockWXDC(1_000_000e18, 104 weeks)           → #7
-2. escrow.setOperator(FeeDistributor, true)
-3. distributor.setKeepAtMaxLock(7, true)
-4. distributor.setAutoCompound(7, true)
-5. distributor.setRecipient(7, Cold)               // optional; compounds still top up #7
+2. escrow.setAutoExtend(7, true)
+3. distributor.setAutoCompound(7, true)
+4. distributor.setRecipient(7, Cold)               // optional; compounds still top up #7
 ```
 
 Weekly (Hermes): `batchKeepAtMaxLock` pre-boundary, `batchCompound` post-boundary.
@@ -338,8 +334,8 @@ need occasional `claim` to Cold (or a claim bot).
 | Gift lock | `zap.*For(beneficiary, …)` |
 | Add principal (self) | `zap.zapIncreaseAmount` / `increaseAmountWXDC` |
 | Add principal (anyone) | `escrow.increaseAmount` |
-| Extend | `increaseUnlockTime` / `keepAtMaxLock` |
-| Auto max weight | `setOperator` + `setKeepAtMaxLock` |
+| Extend | `increaseUnlockTime` |
+| Auto max weight | `setAutoExtend` |
 | Claim rewards | `distributor.claim` |
 | Compound WXDC | `claimAndLock` / `setAutoCompound` + batch |
 | Pay claims elsewhere | `setRecipient` |
