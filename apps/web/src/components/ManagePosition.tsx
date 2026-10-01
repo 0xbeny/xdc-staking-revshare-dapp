@@ -13,6 +13,7 @@ import {
   contractsReady,
   getConfiguredChainId,
   getContractsState,
+  MAX_LOCK_SECONDS,
   MAX_LOCK_WEEKS,
   MIN_LOCK_WEEKS,
   weeksToDuration,
@@ -82,6 +83,22 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
     query: { enabled: ready },
   });
 
+  const { data: autoExtend } = useReadContract({
+    address: escrow,
+    abi: abis.VotingEscrow,
+    functionName: "autoExtend",
+    args: [tokenId],
+    query: { enabled: ready },
+  });
+
+  const { data: exitQuote } = useReadContract({
+    address: escrow,
+    abi: abis.VotingEscrow,
+    functionName: "previewExit",
+    args: [tokenId],
+    query: { enabled: ready && !Boolean(closed) },
+  });
+
   const { data: weight } = useReadContract({
     address: escrow,
     abi: abis.VotingEscrow,
@@ -114,6 +131,12 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
   const cooldownDone = readyAt > 0 && Date.now() / 1000 >= readyAt;
   const unlockEnd = lock ? Number(lock.end) : 0;
   const matured = unlockEnd > 0 && Date.now() / 1000 >= unlockEnd;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const secondsLeft = unlockEnd > nowSec ? unlockEnd - nowSec : 0;
+  const earlyExitBlocked = !matured && secondsLeft > 0 && secondsLeft <= cooldownSec;
+  const emergencyButMature = exitKind === ExitKind.Emergency && matured;
+  const penaltyNow = exitQuote ? exitQuote[1] : undefined;
+  const penaltyBpsNow = exitQuote ? Number(exitQuote[2]) : undefined;
   const isClosed = Boolean(closed);
   const busy = isPending || confirming;
   const writesOk = ready && isConnected && onExpectedChain && !!address && !isClosed;
@@ -260,27 +283,50 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
               type="button"
               className={styles.secondary}
               disabled={!writesOk || exitPending || busy}
+              onClick={() => {
+                const now = Math.floor(Date.now() / 1000);
+                run(() =>
+                  writeContract({
+                    chainId: writeChainId,
+                    address: escrow,
+                    abi: abis.VotingEscrow,
+                    functionName: "increaseUnlockTime",
+                    args: [tokenId, BigInt(now + MAX_LOCK_SECONDS)],
+                  }),
+                );
+              }}
+            >
+              Max lock ({MAX_LOCK_WEEKS}w)
+            </button>
+            <button
+              type="button"
+              className={styles.secondary}
+              disabled={!writesOk || exitPending || busy}
               onClick={() =>
                 run(() =>
                   writeContract({
                     chainId: writeChainId,
                     address: escrow,
                     abi: abis.VotingEscrow,
-                    functionName: "keepAtMaxLock",
-                    args: [tokenId],
+                    functionName: "setAutoExtend",
+                    args: [tokenId, !autoExtend],
                   }),
                 )
               }
             >
-              Max lock ({MAX_LOCK_WEEKS}w)
+              {autoExtend ? "Turn off auto-extend" : "Turn on auto-extend"}
             </button>
           </div>
+          <p className={styles.groupHint}>
+            Auto-extend lets the keeper push this lock back to 104 weeks, and only in the last 2 hours of an epoch.
+          </p>
         </div>
 
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Claim</h3>
           <p className={styles.groupHint}>
-            Rewards pay the NFT recipient. Claim &amp; lock compounds WXDC into this position.
+            Rewards pay the NFT recipient. A week&apos;s yield can be claimed 8 weeks after that week.
+            An early exit forfeits yield that has not finished the wait. Claim &amp; lock compounds WXDC into this position.
           </p>
           <div className={styles.row}>
             <ClaimButton tokenId={tokenId} mode="claim" />
@@ -291,18 +337,33 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>Exit</h3>
           <p className={styles.groupHint}>
-            Request → wait cooldown → finalize. Emergency applies a penalty snapshotted at request.
+            Request, wait out the cooldown, then finalize.
             {cooldownSec > 0
               ? ` Cooldown ${Math.round(cooldownSec / 3600)}h.`
               : " Cooldown is currently 0."}
+            {!matured && !isClosed && penaltyNow !== undefined && penaltyNow > 0n
+              ? ` An early exit now costs ${formatXdc(penaltyNow)} XDC (${(penaltyBpsNow ?? 0) / 100}%).`
+              : ""}
+            {earlyExitBlocked
+              ? " The cooldown would outlast this lock, so an early exit is not available."
+              : ""}
           </p>
 
           {exitPending ? (
             <div className={styles.exitPending}>
               <p className={styles.pendingLabel}>
-                {exitKind === ExitKind.Emergency ? "Emergency" : "Withdraw"} exit armed
+                {emergencyButMature
+                  ? "Lock matured during the cooldown"
+                  : exitKind === ExitKind.Emergency
+                    ? "Emergency exit armed"
+                    : "Withdraw armed"}
                 {readyAt > 0 ? ` · ${formatCountdown(readyAt)}` : ""}
               </p>
+              {emergencyButMature && (
+                <p className={styles.groupHint}>
+                  Finalizing pays the full principal and does not forfeit yield.
+                </p>
+              )}
               <div className={styles.row}>
                 {exitKind === ExitKind.Withdraw && (
                   <button
@@ -341,7 +402,7 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
                       )
                     }
                   >
-                    Finalize emergency exit
+                    Finalize
                   </button>
                 )}
                 <button
@@ -388,8 +449,14 @@ export function ManagePosition({ tokenId, compact = false }: Props) {
               <button
                 type="button"
                 className={styles.danger}
-                disabled={!writesOk || busy || matured}
-                title={matured ? "Lock matured — use withdraw" : undefined}
+                disabled={!writesOk || busy || matured || earlyExitBlocked}
+                title={
+                  matured
+                    ? "Lock matured — use withdraw"
+                    : earlyExitBlocked
+                      ? "The cooldown would outlast this lock"
+                      : undefined
+                }
                 onClick={() =>
                   run(() =>
                     writeContract({

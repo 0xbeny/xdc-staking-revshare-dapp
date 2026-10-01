@@ -27,7 +27,6 @@ export type IndexerPosition = {
   owner: string;
   amount: string;
   unlockTime: number;
-  penaltyCapBps: number;
   closed: boolean;
 };
 
