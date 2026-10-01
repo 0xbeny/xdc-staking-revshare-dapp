@@ -180,7 +180,6 @@ async function refreshPosition(
 
   const amount = lock.amount.toString(10);
   const unlockTime = lock.end.toString(10);
-  const penaltyCapBps = Number(lock.penaltyCapBps);
   const tokenIdStr = tokenId.toString(10);
   const blockStr = toBlockString(blockNumber);
 
@@ -192,7 +191,6 @@ async function refreshPosition(
       owner: normalizeAddress(owner),
       amount,
       unlockTime,
-      penaltyCapBps,
       closed: closedFlag,
       firstEligibleEpoch: firstEligible.toString(10),
       exitEpoch: exitEp === 0n ? null : exitEp.toString(10),
@@ -205,7 +203,6 @@ async function refreshPosition(
         owner: normalizeAddress(owner),
         amount,
         unlockTime,
-        penaltyCapBps,
         closed: closedFlag,
         firstEligibleEpoch: firstEligible.toString(10),
         exitEpoch: exitEp === 0n ? null : exitEp.toString(10),
@@ -337,6 +334,19 @@ async function processVotingEscrowLog(
         chainId,
         tokenId: tokenId.toString(10),
         eventName: "LockExtended",
+        txHash,
+        logIndex,
+        blockNumber: toBlockString(blockNumber),
+        payload: jsonSafe(decoded.args),
+      });
+      break;
+    }
+    case "AutoExtendSet": {
+      const { tokenId } = decoded.args;
+      await insertEvent(db, {
+        chainId,
+        tokenId: tokenId.toString(10),
+        eventName: "AutoExtendSet",
         txHash,
         logIndex,
         blockNumber: toBlockString(blockNumber),
@@ -489,7 +499,6 @@ async function processFeeDistributorLog(
       break;
     }
     case "Compounded":
-    case "KeepAtMaxLockSet":
     case "AutoCompoundSet": {
       const { tokenId } = decoded.args;
       await insertEvent(db, {
@@ -644,6 +653,7 @@ async function processZapDepositorLog(
 const VE_EVENTS = [
   "Deposit",
   "LockExtended",
+  "AutoExtendSet",
   "Withdraw",
   "EmergencyExit",
   "ExitRequested",
@@ -656,7 +666,6 @@ const FD_EVENTS = [
   "ForfeitureSynced",
   "Claimed",
   "Compounded",
-  "KeepAtMaxLockSet",
   "AutoCompoundSet",
 ] as const;
 

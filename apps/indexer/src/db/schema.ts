@@ -32,7 +32,6 @@ export const positions = pgTable(
     owner: text("owner").notNull(),
     amount: u256("amount").notNull(),
     unlockTime: u256("unlock_time").notNull(),
-    penaltyCapBps: integer("penalty_cap_bps").notNull(),
     closed: boolean("closed").notNull().default(false),
     firstEligibleEpoch: u256("first_eligible_epoch"),
     exitEpoch: u256("exit_epoch"),

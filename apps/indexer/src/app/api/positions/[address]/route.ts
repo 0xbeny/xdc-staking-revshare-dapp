@@ -35,7 +35,6 @@ export async function GET(request: Request, { params }: Params) {
         owner: p.owner,
         amount: p.amount,
         unlockTime: Number(p.unlockTime),
-        penaltyCapBps: p.penaltyCapBps,
         closed: p.closed,
         firstEligibleEpoch: p.firstEligibleEpoch,
         exitEpoch: p.exitEpoch,
