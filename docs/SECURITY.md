@@ -101,10 +101,9 @@ These are recorded because each one is a class, not an instance:
 - **`_safeMint`.** A whitelisted custodian must implement `onERC721Received`. A Safe with the
   standard compatibility fallback handler does. A contract that does not will revert at lock
   time — before principal is committed — rather than strand it afterwards.
-- **Keeper as operator.** `keepAtMaxLock` requires the user to approve the distributor (an
-  upgradeable contract) as an operator. The operator right covers *only* extension, which can
-  never shorten a lock, touch principal, or change the penalty cap. Users who prefer can
-  approve the keeper EOA directly instead, or extend themselves.
+- **Keeper extension.** `keepAtMaxLock` runs only while the owner has set `autoExtend` on that
+  position, and only in the last two hours of an epoch. It cannot shorten a lock, move principal,
+  or change the penalty rate. The owner extends at any other time with `increaseUnlockTime`.
 - **Late forfeiture sync.** A penalty's locker share is credited to the epoch after the sync
   that notices it, not the epoch after the exit. It is never lost; it may be delayed if no
   claim, settle or sync happens for a while. The keeper syncs on every `EmergencyExit` event.

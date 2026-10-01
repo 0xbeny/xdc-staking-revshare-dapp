@@ -198,11 +198,11 @@ with its owner. Already-finalized epochs remain claimable through the distributo
 exit. **`exitEpoch` is recorded only for an `emergencyExit` that finalizes before maturity**
 (early exit forfeits the in-progress epoch). Mature `withdraw` needs no such marker — weight is already zero after expiry.
 
-### Operators
+### Auto-extend
 
-`setOperator(operator, approved)` grants **only** the right to call `increaseUnlockTime`
-on the owner's positions. It is how a user lets the keeper run `keepAtMaxLock`. Operators can
-never withdraw, exit, transfer, or claim to a different address.
+`setAutoExtend(tokenId, enabled)` is owner-only. While it is on, anyone may call `keepAtMaxLock`
+in the last two hours of an epoch, which is how the keeper keeps the position at full weight.
+The owner can still call `increaseUnlockTime` at any time. There is no operator approval.
 
 ## SystemAccess
 
@@ -263,7 +263,7 @@ it never backdates it and never loses it.
 ### Keeper batches
 
 - `batchKeepAtMaxLock(ids, expectedEpoch)` — only inside the last `KEEPER_WINDOW = 2 hours`
-  of an epoch, only for positions flagged `keepAtMaxLock`, epoch-guarded, tolerant of
+  of an epoch, only for positions with `autoExtend` on, epoch-guarded, tolerant of
   individual failures. A missed window is never retroactively corrected.
 - `batchCompound(ids, expectedEpoch)` — post-boundary, only for `autoCompound` positions.
 

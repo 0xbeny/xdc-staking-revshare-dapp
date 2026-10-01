@@ -96,7 +96,7 @@ Lifecycle/versioning and "mechanically enforced on registered revenue flows" ter
 - **Zero-supply epochs (#12):** if `totalSupplyAt(epochStart) == 0`, that epoch's revenue **carries forward to the first epoch with non-zero eligible supply**. Never divide by zero, never sweep to treasury, never strand. Folded into the conservation invariant: per token, claims + forfeiture bucket + carry-forward == total notified.
 - **Forfeiture bucket:** unchanged — exit-epoch shares and lockers' penalty share; notifies no earlier than the first epoch whose snapshot excludes the exited tokenId; denominators never modified post-snapshot; exiting positions can never receive their own forfeiture.
 
-**Claim paths:** `claim` (cursor-bounded) · `claimAndLock` (WXDC → `increase_amount`; never extends duration) · keeper flags `autoCompound` and `keepAtMaxLock` (§5 timing) · `setRecipient` (custody/cash-flow split; no transfers exist, so no reset logic).
+**Claim paths:** `claim` (cursor-bounded) · `claimAndLock` (WXDC → `increase_amount`; never extends duration) · `autoCompound` on the distributor and `autoExtend` on the escrow (§5 timing) · `setRecipient` (custody/cash-flow split; no transfers exist, so no reset logic).
 
 ### 3.4 Penalty system
 
@@ -105,7 +105,7 @@ Lifecycle/versioning and "mechanically enforced on registered revenue flows" ter
 - `penalty = effectivePenaltyBps × effectiveTime / MAX_LOCK` with `effectiveTime = min(unlock − now, MAX_LOCK)`. Continuous to zero at expiry; no floor.
 - **One penalty cap.** `maxPenaltyBps` is the rate for every live lock. Governance may only **lower** it; raises revert. A reduction applies immediately. `penaltySplitBps` can only be lowered too. Exit economics stay predictable because neither number can get worse after people lock.
 - **`increase_amount` rule:** adding principal does not change the penalty rate. The rate is `maxPenaltyBps` before and after. `autoCompound` uses this path.
-- **Extensions never change the cap.** `increase_unlock_time` (including `keepAtMaxLock`'s weekly calls) must not silently re-opt users into harsher terms — a keeper convenience flag cannot be a consent mechanism. A position's cap changes only through the weighted `increase_amount` rule above.
+- **Auto-extend.** The owner turns on `setAutoExtend` for a position. `keepAtMaxLock` is then permissionless, and only in the last two hours of an epoch. `increaseUnlockTime` stays owner-only and can be called at any time.
 - Already-finalized rewards pay in full at exit; in-progress epoch share → forfeiture bucket. Forfeit split 80/20 (tunable; treasury ≤ 50%; destinations immutable).
 - v1 honesty note stands: until the wrapper ships, penalty exit is the only early door. Lock what you can commit; say so loudly in launch materials.
 

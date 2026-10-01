@@ -42,8 +42,8 @@ Deployments come from `@vexdc/contracts` (`getDeployment` / `requireDeployment`)
 
 | Contract | Events |
 |----------|--------|
-| VotingEscrow | `Deposit`, `LockExtended`, `Withdraw`, `EmergencyExit`, `ExitRequested`, `ExitRequestCancelled` |
-| FeeDistributor | `RevenueNotified`, `EpochSettled`, `ForfeitureSynced`, `Claimed`, `Compounded`, `KeepAtMaxLockSet`, `AutoCompoundSet` |
+| VotingEscrow | `Deposit`, `LockExtended`, `AutoExtendSet`, `Withdraw`, `EmergencyExit`, `ExitRequested`, `ExitRequestCancelled` |
+| FeeDistributor | `RevenueNotified`, `EpochSettled`, `ForfeitureSynced`, `Claimed`, `Compounded`, `AutoCompoundSet` |
 | RevenueRegistry | `AdapterRegistered`, `AdapterDeactivated`, `AdapterReactivated`, `ContributionRecorded` |
 | ZapDepositor | `Zapped`, `ZapIncreased` |
 
