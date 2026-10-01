@@ -130,6 +130,30 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         ghostDeposited += value;
     }
 
+    /// @dev Compounding must never revert: when the escrow cannot take the yield (cap full, lock
+    ///      expired or closed) it is paid out instead. New principal is tracked in the ghost.
+    function compound(uint256 tokenSeed, bool tightCap) external {
+        uint256 tokenId = _tokenId(tokenSeed);
+        if (tokenId == 0) {
+            return;
+        }
+        // Random cap moves almost never leave less room than one compound needs.
+        if (tightCap) {
+            uint256 tight = ESCROW.totalLocked() + 1;
+            if (tight < ESCROW.stakingCap()) {
+                vm.prank(CAP_GUARDIAN);
+                ESCROW.setStakingCap(tight);
+            }
+        }
+        uint256 principalBefore = ESCROW.locked(tokenId).amount;
+        vm.prank(ESCROW.ownerOf(tokenId));
+        DISTRIBUTOR.claimAndLock(tokenId);
+        uint256 principalAfter = ESCROW.locked(tokenId).amount;
+        if (principalAfter > principalBefore) {
+            ghostDeposited += principalAfter - principalBefore;
+        }
+    }
+
     function _stakingHeadroom() internal view returns (uint256) {
         uint256 locked = ESCROW.totalLocked();
         uint256 cap = ESCROW.stakingCap();

@@ -17,7 +17,7 @@ contract SystemInvariantsTest is Base {
         handler =
             new Handler(escrow, zap, distributor, pusher, wxdc, usdc, dapp, timelock, guardian, [alice, bob, carol]);
 
-        bytes4[] memory selectors = new bytes4[](13);
+        bytes4[] memory selectors = new bytes4[](14);
         selectors[0] = Handler.createLock.selector;
         selectors[1] = Handler.increaseAmount.selector;
         selectors[2] = Handler.extendLock.selector;
@@ -31,6 +31,7 @@ contract SystemInvariantsTest is Base {
         selectors[10] = Handler.warp.selector;
         selectors[11] = Handler.setPenaltyParams.selector;
         selectors[12] = Handler.setStakingCap.selector;
+        selectors[13] = Handler.compound.selector;
 
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));

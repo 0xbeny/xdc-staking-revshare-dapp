@@ -252,7 +252,8 @@ epochs so a bounded `settle` inside `claim` still prompts another call. The curs
 `firstEligibleEpoch`.
 
 `claimAndLock` claims WXDC and folds it straight back via `increaseAmount` — so the
-weighted-cap rule applies — and degrades to a plain claim once the lock has expired or closed.
+weighted-cap rule applies — and degrades to a plain claim when the lock has expired or closed,
+has a pending exit, or the staking cap has no room for the amount.
 Authorized callers: the position owner, or a `KEEPER` when `autoCompound[tokenId]` is set.
 Escrow operators cannot compound.
 
