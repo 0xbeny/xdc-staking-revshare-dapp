@@ -36,7 +36,10 @@ contract ZodiacFeeModule is RevenueAdapterBase {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(FEE_SAFE);
         if (balance == 0) {
-            revert NothingToSkim();
+            if (pendingCommitted[token] == 0) {
+                revert NothingToSkim();
+            }
+            return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
         }
 
         uint256 before = IERC20(token).balanceOf(address(this));
@@ -54,6 +57,6 @@ contract ZodiacFeeModule is RevenueAdapterBase {
             revert SweepIncomplete();
         }
 
-        return _splitAndForward(token, received);
+        return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
     }
 }

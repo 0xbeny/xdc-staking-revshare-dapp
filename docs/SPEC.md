@@ -4,7 +4,7 @@
 
 **v0.5 changes (second review response):** effective-time clamp `min(timeRemaining, MAX_LOCK)` for weight and penalty (#1) · **split/merge removed from v1** (#2) · bounded claims with `MAX_EPOCHS_PER_CLAIM` cursor (#3) · keeper window moved pre-boundary (#4) · per-position penalty cap grandfathering, with a weighted-average rule closing an `increase_amount` loophole (#5) · Mode C reduced to atomic one-shot submissions with later-period adjustments (#6) · B3 requires a dedicated fee Safe; zero-balance-after-sweep invariant unified across B2/B3 (#7) · revenue attribution frozen to notification time; sourceEpoch vs distributionEpoch separated (#8) · **`wrapInto` removed — Option B** (#9) · SmartWalletChecker reworded, counterfactual-contract threat model stated (#10) · **PenaltyManager removed; parameters live in the escrow behind immutable clamps** (#11) · zero-supply epochs carry revenue forward (#12) · journey example corrected (#13).
 
-**The six frozen decisions** (per reviewer): 1. MAX_LOCK clamping — frozen as §3.1. 2. split/merge — frozen as *absent*. 3. keeper timing — frozen as §5's pre-boundary window. 4. penalty terms for existing positions — frozen as §3.4 grandfathering. 5. Mode C — frozen as §3.2's atomic one-shot. 6. `wrapInto` — frozen as *absent* (Option B).
+**The six frozen decisions** (per reviewer): 1. MAX_LOCK clamping — frozen as §3.1. 2. split/merge — frozen as *absent*. 3. keeper timing — frozen as §5's pre-boundary window. 4. penalty terms — frozen as one `maxPenaltyBps` that can only fall (§3.4). 5. Mode C — frozen as §3.2's atomic one-shot. 6. `wrapInto` — frozen as *absent* (Option B).
 
 ---
 
@@ -49,7 +49,7 @@ v1 contract inventory is now four immutable contracts (VotingEscrow, ZapDeposito
 - WXDC or native XDC **only via `ZapDepositor`** → `create_lock_for(beneficiary, ...)`; the escrow rejects every other mint caller. Eligibility is checked against the beneficiary.
 - `duration % 1 weeks == 0`, `MIN_LOCK ≤ duration ≤ MAX_LOCK`. Unlock **rounds UP** to the next week boundary; `require(effective ≥ MIN_LOCK)`.
 - **Effective-time clamp (#1):** everywhere `timeRemaining` is used, it is first clamped: `effectiveTime = min(unlock − now, MAX_LOCK)`. **Weight uses the truncated slope** `weight = (amount / MAX_LOCK) × effectiveTime` so Σ positions == `totalSupply` to the wei (dust locks with `amount < MAX_LOCK` have zero weight). Penalty uses the same `effectiveTime`. A nominal 104-week lock whose aligned unlock lands at ~104.9 weeks earns exactly 1.0× weight and can never exceed `maxPenaltyBps`. **Invariants: `weight ≤ principal`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`.**
-- `increase_amount(tokenId, amount)` is **permissionless** (anyone may fund a position; the cap re-weights). `increase_unlock_time(tokenId, newUnlock)` is owner-or-operator only (same round-up + clamp). `ZapDepositor.zapIncreaseAmount` is owner-only as a native-XDC consent UX; auto-compound uses the escrow path.
+- `increase_amount(tokenId, amount)` is **permissionless** (anyone may fund a position). `increase_unlock_time(tokenId, newUnlock)` is owner-or-operator only (same round-up + clamp). `ZapDepositor.zapIncreaseAmount` is owner-only as a native-XDC consent UX; auto-compound uses the escrow path.
 - `withdraw(tokenId)` after expiry and `emergencyExit(tokenId)` before expiry: both are two-phase
   with a timelock-tunable `withdrawalCooldown` (default 24h, hard max 7d). First call (or
   `requestWithdraw` / `requestEmergencyExit`) arms the exit and **snapshots `readyAt`**; after
@@ -103,8 +103,8 @@ Lifecycle/versioning and "mechanically enforced on registered revenue flows" ter
 `emergencyExit(tokenId)`, fully inside the escrow:
 
 - `penalty = effectivePenaltyBps × effectiveTime / MAX_LOCK` with `effectiveTime = min(unlock − now, MAX_LOCK)`. Continuous to zero at expiry; no floor.
-- **Grandfathered terms (#5):** each position stores `positionPenaltyCap`, snapshotted from the global `maxPenaltyBps` at creation. Effective cap = `min(positionPenaltyCap, current maxPenaltyBps)`. Governance may only **lower** `maxPenaltyBps` (monotonically non-increasing); raises revert. Reductions benefit everyone immediately. Soulbound + penalty-as-only-door makes this essential: exit economics must be predictable at lock time.
-- **`increase_amount` rule:** on `increase_amount`, the cap re-weights — `newCap = (oldPrincipal × oldCap + addedPrincipal × currentGlobal) / newPrincipal`. Old principal keeps its terms exactly; new principal enters at current (≤ prior) terms. With a non-increasing global, a single weighted cap cannot be worsened by later governance. `autoCompound`'s small weekly adds drift the cap only marginally and only toward current terms, which is fair.
+- **One penalty cap.** `maxPenaltyBps` is the rate for every live lock. Governance may only **lower** it; raises revert. A reduction applies immediately. `penaltySplitBps` can only be lowered too. Exit economics stay predictable because neither number can get worse after people lock.
+- **`increase_amount` rule:** adding principal does not change the penalty rate. The rate is `maxPenaltyBps` before and after. `autoCompound` uses this path.
 - **Extensions never change the cap.** `increase_unlock_time` (including `keepAtMaxLock`'s weekly calls) must not silently re-opt users into harsher terms — a keeper convenience flag cannot be a consent mechanism. A position's cap changes only through the weighted `increase_amount` rule above.
 - Already-finalized rewards pay in full at exit; in-progress epoch share → forfeiture bucket. Forfeit split 80/20 (tunable; treasury ≤ 50%; destinations immutable).
 - v1 honesty note stands: until the wrapper ships, penalty exit is the only early door. Lock what you can commit; say so loudly in launch materials.
@@ -145,8 +145,8 @@ Foundry invariants first-class; fork audited escrow references, audit the diff; 
 
 **Named invariants (v0.5 set):**
 - Principal safety: no path but immutable withdraw/exit; `emergencyExit` makes no external calls; post-maturity `withdraw` succeeds under hostile periphery.
-- `weight ≤ principal`; `effectiveTime ≤ MAX_LOCK`; `penaltyBps ≤ min(positionPenaltyCap, maxPenaltyBps) ≤ HARD_MAX_PENALTY_BPS`; penalty destinations exactly the two immutable addresses.
-- Grandfathering: no governance action increases any existing position's effective cap; `increase_amount` re-weights the cap exactly per formula; `increase_unlock_time` never changes it.
+- `weight ≤ principal`; `effectiveTime ≤ MAX_LOCK`; `penaltyBps ≤ maxPenaltyBps ≤ HARD_MAX_PENALTY_BPS`; penalty destinations exactly the two immutable addresses.
+- The penalty cap only falls: no governance action raises `maxPenaltyBps`, and every live lock uses that rate.
 - Conservation per token: claims + forfeiture bucket + zero-supply carry-forward == total notified; denominators immutable post-snapshot; exited tokenId never receives own forfeiture.
 - Effective lock ≥ MIN_LOCK at every boundary; weight always from actual (clamped) unlock time.
 - Soulbound: no transfer path exists, none reachable by any call sequence.
@@ -171,7 +171,7 @@ Hooks that remain in v1: WRAPPER whitelist tier (empty), `create_lock_for`, chec
 
 Example economics: 5,300 USDC + 18,000 WXDC per weekly epoch, 25M total ve.
 
-1. **Lock:** 100k XDC via Zap, 52 weeks → rounds up to the next Thursday boundary (effective ≥ 52 weeks, clamped at 104 for weight/penalty math) → soulbound veNFT, initial weight ≈ 50,000 ve (0.2%). The position's penalty cap snapshots at the current `maxPenaltyBps` and can never be raised for this position.
+1. **Lock:** 100k XDC via Zap, 52 weeks → rounds up to the next Thursday boundary (effective ≥ 52 weeks, clamped at 104 for weight/penalty math) → soulbound veNFT, initial weight ≈ 50,000 ve (0.2%). The early-exit rate is the current `maxPenaltyBps`, and governance can only lower it.
 2. **First epoch:** mid-epoch locks first earn at the next start-of-epoch snapshot.
 3. **Earning (#13, corrected):** **if the position maintains roughly a 0.2% share for ten epochs** — e.g. via `keepAtMaxLock`, with total supply roughly stable — it accrues ~106 USDC + ~360 WXDC over those ten weeks. Without re-extension the share decays linearly each week (≈0.19% by week 10, halved by week 26), so a passive claim lands proportionally lower.
 4. **Receiving:** one cursor-bounded `claim()` (a 10-week backlog fits comfortably in one call); or opt into `autoCompound` and, separately, `keepAtMaxLock` (executed in the pre-boundary window so full weight is what gets snapshotted). `setRecipient` for custody/cash-flow separation.

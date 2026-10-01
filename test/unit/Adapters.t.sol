@@ -63,6 +63,47 @@ contract AdaptersTest is Base {
         splitter.skim(address(usdc));
     }
 
+    function test_aRefusedNotifyStillPaysTheDappAndRetriesLater() public {
+        deal(address(usdc), address(splitter), 10_000e6);
+        vm.prank(guardian);
+        distributor.pause();
+
+        uint256 treasuryBefore = usdc.balanceOf(dappTreasury);
+        splitter.skim(address(usdc));
+
+        assertEq(usdc.balanceOf(dappTreasury) - treasuryBefore, 7000e6, "the dApp share leaves immediately");
+        assertEq(usdc.balanceOf(address(splitter)), 3000e6, "only the locker share waits");
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 0);
+
+        vm.prank(timelock);
+        distributor.unpause();
+        splitter.skim(address(usdc));
+
+        assertEq(usdc.balanceOf(address(splitter)), 0, "the held share is forwarded once");
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 3000e6, "not split a second time");
+        assertEq(usdc.balanceOf(dappTreasury) - treasuryBefore, 7000e6, "the dApp is not paid again");
+    }
+
+    function test_aDeactivatedSplitterHoldsTheLockerShareUntilReactivated() public {
+        deal(address(usdc), address(splitter), 10_000e6);
+        vm.prank(timelock);
+        registry.deactivateAdapter(address(splitter));
+
+        splitter.skim(address(usdc));
+        assertEq(usdc.balanceOf(address(splitter)), 3000e6);
+        assertEq(usdc.balanceOf(dappTreasury), 7000e6);
+
+        splitter.skim(address(usdc));
+        assertEq(usdc.balanceOf(address(splitter)), 3000e6, "it stays until the adapter can notify again");
+
+        vm.prank(timelock);
+        registry.reactivateAdapter(address(splitter));
+        splitter.skim(address(usdc));
+        assertEq(usdc.balanceOf(address(splitter)), 0);
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 3000e6);
+        assertEq(usdc.balanceOf(dappTreasury), 7000e6);
+    }
+
     function test_adapterRejectsUnsupportedTokens() public {
         vm.expectRevert(abi.encodeWithSelector(RevenueAdapterBase.UnsupportedToken.selector, address(0xBEEF)));
         splitter.skim(address(0xBEEF));

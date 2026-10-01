@@ -37,7 +37,7 @@ places where the code deliberately differs from the Curve/Velodrome reference it
 | `FeeDistributor` | UUPS | revenue awaiting claim | weekly epoch accounting and claims |
 | `RevenueRegistry` | UUPS | never | which adapters may notify, and their terms |
 | `PushAdapter` (A) | immutable | never between calls | dApp pushes committed revenue |
-| `FeeSplitter` (B) | immutable | never between calls | dApp's fee receiver; anyone skims |
+| `FeeSplitter` (B) | immutable | committed share only while the distributor will not take it | dApp's fee receiver; anyone skims |
 | `PullAdapter` (B2) | immutable | never between calls | sweeps a dedicated fee Safe by allowance |
 | `ZodiacFeeModule` (B3) | immutable | never between calls | sweeps a dedicated fee Safe as a Safe module |
 | `Attestor` (C) | immutable | never between calls | atomic epoch attestations by a reporter |
@@ -75,7 +75,7 @@ Rules inside `createLockFor`:
 3. `unlock = ceilWeek(now + duration)` — rounds **up**, so the effective lock is never shorter
    than asked. It can be up to `WEEK - 1` seconds *longer*.
 4. The beneficiary must be an EOA, or a contract with a `CUSTODIAN`/`WRAPPER` tier.
-5. The position records `penaltyCapBps = maxPenaltyBps` at that instant (grandfathering).
+5. The position is live from that instant. Weight and the early-exit penalty both use the current `maxPenaltyBps`.
 6. It also records `firstEligibleEpoch = epochOf(ceilWeek(now))` — the first epoch whose
    start-of-epoch snapshot can contain it.
 7. Principal is credited from the **balance delta** of the escrow token transfer: if
@@ -169,34 +169,20 @@ hard-capped at 7 days via `HARD_MAX_WITHDRAWAL_COOLDOWN`):
 
 ```
 eff        = min(unlock − now, MAX_LOCK)
-cap        = min(position.penaltyCapBps, maxPenaltyBps)
-penaltyBps = cap × eff / MAX_LOCK               → continuous to 0 at expiry, no floor
+penaltyBps = maxPenaltyBps × eff / MAX_LOCK     → continuous to 0 at expiry, no floor
 penalty    = amount × penaltyBps / 10_000
-toTreasury = penalty × penaltySplitBps / 10_000  (≤ 50%, immutable clamp)
+toTreasury = penalty × penaltySplitBps / 10_000  (≤ 50%, and the split can only fall)
 toLockers  = penalty − toTreasury                 → transferred to the distributor
 ```
 
 `maxPenaltyBps` and `penaltySplitBps` are storage variables settable only by the timelock,
-clamped by the immutable constants `HARD_MAX_PENALTY_BPS = 5000` and
-`HARD_MAX_PENALTY_SPLIT_BPS = 5000`. The two destinations are `immutable`. There is no
-PenaltyManager; `emergencyExit` makes no external call except the three WXDC transfers
-(after the cooldown finalize step). `penaltySplitBps` can only be lowered, so the lockers'
-share of a penalty never shrinks.
+and each can only be lowered. They are clamped by the immutable constants
+`HARD_MAX_PENALTY_BPS = 5000` and `HARD_MAX_PENALTY_SPLIT_BPS = 5000`. The two destinations
+are `immutable`. There is no PenaltyManager; `emergencyExit` makes no external call except the
+three WXDC transfers (after the cooldown finalize step).
 
-**Grandfathering.** `position.penaltyCapBps` is snapshotted at creation. Governance may only
-**lower** `maxPenaltyBps` (monotonically non-increasing); raises revert. Lowering helps
-everyone at once via `min(positionCap, global)`. `increaseAmount` re-weights the cap so old
-principal keeps its exact terms and new principal enters at current terms:
-
-```
-newCap = (oldPrincipal × oldCap + added × maxPenaltyBps) / newPrincipal
-```
-
-Because the global cannot rise, a single weighted cap preserves the paper invariant that
-governance cannot worsen an existing commitment — including across later `increaseAmount`
-calls — without per-tranche accounting.
-
-`increaseUnlockTime` (and `keepAtMaxLock`) never touch the cap.
+There is one penalty cap, the current `maxPenaltyBps`. A reduction applies to every live lock.
+`increaseAmount` and `increaseUnlockTime` do not store a rate of their own.
 
 **Recording the forfeited share.** The exiting position loses its slice of the *current*
 epoch. The escrow records `exitedWeightByEpoch[currentEpoch] += balanceOfNFTAt(id, epochStart)`

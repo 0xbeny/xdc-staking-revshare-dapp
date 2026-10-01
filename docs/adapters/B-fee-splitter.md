@@ -70,7 +70,7 @@ epoch; it never backdates.
 
 | Method | Caller | Effect |
 |--------|--------|--------|
-| `skim(token)` | anyone | Split full balance → distributor + treasury |
+| `skim(token)` | anyone | Pay the dApp share now. The locker share goes to the distributor, or stays here until the distributor will take it |
 | `SOURCE` / `COMMITTED_BPS` / … | — | Immutable constructor params |
 
 ## Lifecycle

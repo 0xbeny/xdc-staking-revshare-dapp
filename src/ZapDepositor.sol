@@ -82,8 +82,8 @@ contract ZapDepositor is Context {
     }
 
     /// @notice Wraps `msg.value` and adds it to a position the caller owns.
-    /// @dev Owner-only on purpose: adding principal re-weights the position's grandfathered
-    ///      penalty cap (spec §3.4), and only the owner can consent to that.
+    /// @dev Owner-only: native XDC added to someone else's lock needs their consent.
+    ///      The escrow's own `increaseAmount` stays permissionless for compounding.
     function zapIncreaseAmount(uint256 tokenId) external payable {
         if (msg.value == 0) {
             revert ZeroAmount();

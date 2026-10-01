@@ -112,7 +112,7 @@ contract SystemInvariantsTest is Base {
         for (uint256 i; i < n; ++i) {
             uint256 tokenId = handler.tokenIds(i);
             (,, uint256 bps) = escrow.previewExit(tokenId);
-            assertLe(bps, escrow.effectivePenaltyCapBps(tokenId));
+            assertLe(bps, escrow.maxPenaltyBps());
             assertLe(bps, escrow.HARD_MAX_PENALTY_BPS());
         }
     }
@@ -176,7 +176,7 @@ contract SystemInvariantsTest is Base {
     function invariant_adaptersHoldNoBalance() public view {
         assertEq(usdc.balanceOf(address(pusher)), 0);
         assertEq(wxdc.balanceOf(address(pusher)), 0);
-        assertEq(usdc.balanceOf(address(splitter)), 0);
+        assertEq(usdc.balanceOf(address(splitter)), splitter.pendingCommitted(address(usdc)));
         assertEq(usdc.balanceOf(address(attestor)), 0);
     }
 

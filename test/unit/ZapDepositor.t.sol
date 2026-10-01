@@ -93,6 +93,25 @@ contract ZapDepositorTest is Base {
         assertEq(escrow.locked(tokenId).amount, 150 ether);
     }
 
+    function test_increaseAmountWXDCRejectsZeroAndStrangers() public {
+        vm.prank(alice);
+        uint256 tokenId = zap.zapCreateLock{value: 100 ether}(4 weeks);
+
+        vm.prank(alice);
+        vm.expectRevert(ZapDepositor.ZeroAmount.selector);
+        zap.increaseAmountWXDC(tokenId, 0);
+
+        vm.prank(bob);
+        vm.expectRevert(ZapDepositor.NotPositionOwner.selector);
+        zap.increaseAmountWXDC(tokenId, 1 ether);
+    }
+
+    function test_lockWXDCForRejectsAZeroBeneficiary() public {
+        vm.prank(alice);
+        vm.expectRevert(ZapDepositor.ZeroAddress.selector);
+        zap.lockWXDCFor(address(0), 1 ether, 4 weeks);
+    }
+
     /// @dev Adding principal re-weights the position's penalty cap, so only the owner may do it
     ///      through the zap. The escrow itself stays Curve-style permissionless so compounders
     ///      and gifters can still fund a position directly.
@@ -100,13 +119,11 @@ contract ZapDepositorTest is Base {
         vm.prank(alice);
         uint256 tokenId = zap.zapCreateLock{value: 100 ether}(52 weeks);
 
-        uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
         vm.prank(bob);
         vm.expectRevert(ZapDepositor.NotPositionOwner.selector);
         zap.zapIncreaseAmount{value: 50 ether}(tokenId);
 
         assertEq(escrow.locked(tokenId).amount, 100 ether);
-        assertEq(escrow.locked(tokenId).penaltyCapBps, capBefore, "a stranger cannot touch the cap via zap");
     }
 
     /// @dev Escrow `increaseAmount` is intentionally permissionless: a stranger may fund someone
@@ -120,10 +137,6 @@ contract ZapDepositorTest is Base {
         uint256 tokenId = zap.lockWXDC(100 ether, 52 weeks);
         vm.stopPrank();
 
-        uint256 capBefore = escrow.locked(tokenId).penaltyCapBps;
-        assertEq(capBefore, 4000);
-
-        // Global can only fall; stranger funding re-weights toward the cheaper current terms.
         vm.prank(timelock);
         escrow.setMaxPenaltyBps(2000);
 
@@ -134,8 +147,8 @@ contract ZapDepositorTest is Base {
 
         assertEq(escrow.ownerOf(tokenId), alice, "ownership unchanged");
         assertEq(escrow.locked(tokenId).amount, 200 ether);
-        // newCap = (100e*4000 + 100e*2000) / 200e = 3000
-        assertEq(escrow.locked(tokenId).penaltyCapBps, 3000);
+        (,, uint256 bps) = escrow.previewExit(tokenId);
+        assertEq(bps, (2000 * escrow.effectiveTime(tokenId)) / MAX_LOCK);
         assertEq(wxdc.balanceOf(address(escrow)), escrow.totalLocked());
     }
 

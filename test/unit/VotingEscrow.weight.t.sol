@@ -56,7 +56,7 @@ contract VotingEscrowWeightTest is Base {
     /// @dev The critical accounting property: the global aggregate equals the exact sum of the
     ///      per-position weights, at every point in time, including inside the clamped region.
     function test_totalSupplyEqualsSumOfPositionsAcrossTime() public {
-        vm.warp(_epochStart(_currentEpoch()) + 2 days + 5 hours);
+        _warpToWeekOffset(2 days + 5 hours);
 
         uint256[] memory ids = new uint256[](4);
         ids[0] = _lock(alice, 100_000 ether, MAX_LOCK); // clamped at creation
@@ -83,7 +83,7 @@ contract VotingEscrowWeightTest is Base {
     }
 
     function test_totalSupplyAtWeek_matchesHistoricalSum() public {
-        vm.warp(_epochStart(_currentEpoch()) + 1 days);
+        _warpToWeekOffset(1 days);
         uint256 a = _lock(alice, 100_000 ether, MAX_LOCK);
         uint256 b = _lock(bob, 40_000 ether, 30 weeks);
 

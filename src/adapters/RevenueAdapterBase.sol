@@ -28,6 +28,9 @@ abstract contract RevenueAdapterBase is Context, ReentrancyGuard {
     address[] private _tokens;
     mapping(address token => bool) private _supported;
 
+    /// @notice Committed share the distributor would not take. Retried on the next skim, not split again.
+    mapping(address token => uint256) public pendingCommitted;
+
     event Skimmed(address indexed token, uint256 total, uint256 committed, uint256 remainder);
 
     error ZeroAddress();
@@ -84,21 +87,31 @@ abstract contract RevenueAdapterBase is Context, ReentrancyGuard {
         }
     }
 
-    /// @dev Splits `total` held by this adapter and pushes the committed share to the
-    ///      distributor. The remainder always leaves in the same transaction, so an adapter
-    ///      never accumulates a balance between skims.
+    /// @dev Splits new revenue. A committed share the distributor will not take stays here and is
+    ///      retried whole on a later skim. The dApp share always leaves in this call.
     function _splitAndForward(address token, uint256 total) internal returns (uint256 committed, uint256 remainder) {
-        committed = (total * COMMITTED_BPS) / Constants.BPS;
-        remainder = total - committed;
-
-        if (committed > 0) {
-            IERC20(token).forceApprove(DISTRIBUTOR, committed);
-            IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, committed);
+        uint256 pending = pendingCommitted[token];
+        if (pending > total) {
+            pending = total;
         }
+        uint256 incoming = total - pending;
+        uint256 fresh = (incoming * COMMITTED_BPS) / Constants.BPS;
+        remainder = incoming - fresh;
+
         if (remainder > 0) {
             IERC20(token).safeTransfer(DAPP_TREASURY, remainder);
         }
 
-        emit Skimmed(token, total, committed, remainder);
+        uint256 held = pending + fresh;
+        if (held > 0 && IFeeDistributor(DISTRIBUTOR).canNotifyRevenue(address(this), token)) {
+            pendingCommitted[token] = 0;
+            IERC20(token).forceApprove(DISTRIBUTOR, held);
+            IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, held);
+            committed = held;
+        } else {
+            pendingCommitted[token] = held;
+        }
+
+        emit Skimmed(token, incoming, committed, remainder);
     }
 }

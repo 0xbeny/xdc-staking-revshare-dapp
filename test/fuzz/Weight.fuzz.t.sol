@@ -18,7 +18,7 @@ contract WeightFuzzTest is Base {
     function testFuzz_effectiveTimeIsAlwaysClamped(uint128 amount, uint16 weeksToLock, uint32 offset) public {
         amount = uint128(bound(amount, 1 ether, 1_000_000 ether));
         // Start anywhere inside a week so the round-up can overshoot.
-        vm.warp(_epochStart(_currentEpoch()) + bound(offset, 0, WEEK - 1));
+        _warpToWeekOffset(bound(offset, 0, WEEK - 1));
         uint256 duration = bound(weeksToLock, 1, 104) * WEEK;
 
         uint256 tokenId = _lock(alice, amount, duration);
@@ -28,7 +28,7 @@ contract WeightFuzzTest is Base {
     /// @dev Invariant: the effective lock is never shorter than MIN_LOCK at creation.
     function testFuzz_effectiveLockIsAtLeastMinLock(uint128 amount, uint16 weeksToLock, uint32 offset) public {
         amount = uint128(bound(amount, 1 ether, 1_000_000 ether));
-        vm.warp(_epochStart(_currentEpoch()) + bound(offset, 0, WEEK - 1));
+        _warpToWeekOffset(bound(offset, 0, WEEK - 1));
         uint256 duration = bound(weeksToLock, 1, 104) * WEEK;
 
         uint256 tokenId = _lock(alice, amount, duration);
@@ -47,7 +47,7 @@ contract WeightFuzzTest is Base {
     ) public {
         amountA = uint128(bound(amountA, 1 ether, 1_000_000 ether));
         amountB = uint128(bound(amountB, 1 ether, 1_000_000 ether));
-        vm.warp(_epochStart(_currentEpoch()) + bound(offset, 0, WEEK - 1));
+        _warpToWeekOffset(bound(offset, 0, WEEK - 1));
 
         uint256 a = _lock(alice, amountA, bound(weeksA, 1, 104) * WEEK);
         uint256 b = _lock(bob, amountB, bound(weeksB, 1, 104) * WEEK);

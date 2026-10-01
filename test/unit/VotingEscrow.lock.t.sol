@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {VotingEscrow} from "../../src/VotingEscrow.sol";
 import {ZapDepositor} from "../../src/ZapDepositor.sol";
 import {Base} from "../Base.t.sol";
-import {MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
+import {LockReadyCustodian, MockCustodian, MockNonReceiver} from "../mocks/MockCustodian.sol";
 
 contract VotingEscrowLockTest is Base {
     function test_createLock_roundsUnlockUpToWeekBoundary() public {
@@ -77,6 +77,21 @@ contract VotingEscrowLockTest is Base {
         uint256 tokenId = zap.lockWXDCFor(address(custodian), 1 ether, 4 weeks);
         vm.stopPrank();
         assertEq(escrow.ownerOf(tokenId), address(custodian));
+    }
+
+    function test_receiverSeesTheFinishedLock() public {
+        LockReadyCustodian custodian = new LockReadyCustodian();
+        vm.prank(timelock);
+        escrow.setTier(address(custodian), VotingEscrow.Tier.CUSTODIAN);
+        wxdc.mint(address(custodian), 100 ether);
+
+        vm.startPrank(address(custodian));
+        wxdc.approve(address(zap), 100 ether);
+        uint256 tokenId = zap.lockWXDC(100 ether, 4 weeks);
+        vm.stopPrank();
+
+        assertEq(escrow.ownerOf(tokenId), address(custodian));
+        assertEq(escrow.locked(tokenId).amount, 100 ether);
     }
 
     /// @dev Whitelisting a contract that cannot hold an ERC721 is a misconfiguration; the mint
@@ -248,6 +263,45 @@ contract VotingEscrowLockTest is Base {
         vm.prank(bob);
         vm.expectRevert(VotingEscrow.NotAuthorized.selector);
         escrow.withdraw(tokenId);
+    }
+
+    function test_requestAndCancelExitRejectTheWrongCallerAndState() public {
+        uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.requestWithdraw(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.LockNotExpired.selector);
+        escrow.requestWithdraw(tokenId);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.ExitPending.selector);
+        escrow.requestEmergencyExit(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.WrongExitKind.selector);
+        escrow.withdraw(tokenId);
+
+        vm.prank(bob);
+        vm.expectRevert(VotingEscrow.NotAuthorized.selector);
+        escrow.cancelExitRequest(tokenId);
+        vm.prank(alice);
+        escrow.cancelExitRequest(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.NoExitRequest.selector);
+        escrow.cancelExitRequest(tokenId);
+
+        vm.warp(escrow.locked(tokenId).end);
+        vm.prank(alice);
+        escrow.requestWithdraw(tokenId);
+        vm.prank(alice);
+        vm.expectRevert(VotingEscrow.WrongExitKind.selector);
+        escrow.emergencyExit(tokenId);
     }
 
     function test_closedPositionCannotBeReused() public {

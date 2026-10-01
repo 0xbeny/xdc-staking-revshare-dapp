@@ -205,15 +205,11 @@ The penalty is split between remaining lockers (majority share, streamed through
 epoch's distribution) and the protocol treasury (immutably capped at ≤ 50% of the penalty).
 Early exits therefore directly compensate those who stay.
 
-### 5.3 Grandfathered terms
+### 5.3 One penalty cap
 
-Each position stores the penalty cap in force at its creation. The effective cap is always
-`min(position cap, current global cap)` — governance lowering the cap benefits every position
-immediately; raising it never reaches an existing position. Adding principal re-weights the
-stored cap by size (old principal keeps its exact terms, new principal enters at current
-terms), which closes the loophole of parking a small position under cheap terms and pouring
-size into it later. Extending a lock never changes the cap: a keeper convenience flag is not
-a consent mechanism.
+Every live lock uses the current `maxPenaltyBps`. Governance can lower it, and the lower rate
+applies at once. It cannot be raised. Adding principal or extending a lock does not store a
+separate rate.
 
 ---
 
@@ -327,8 +323,7 @@ the dApp itself deployed.
 
 Every game above assumes the rules hold. In most protocols that assumption is itself a game
 against governance. Here, the moves governance could use to defect are removed rather than
-discouraged: it cannot raise `maxPenaltyBps` at all (monotonically non-increasing) and therefore
-cannot raise any existing position's effective penalty cap, cannot touch the weight formula or
+discouraged: it cannot raise `maxPenaltyBps` at all (monotonically non-increasing), cannot touch the weight formula or
 penalty destinations (immutable), cannot block exits beyond a hard-capped cooldown (and pending
 `readyAt` is snapshotted), and cannot reach principal through any upgrade (the vault is not
 upgradeable). The players' subgame-perfect strategies can therefore be computed at lock time —
