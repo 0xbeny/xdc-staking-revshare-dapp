@@ -564,7 +564,9 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         uint256 settled = settledEpoch[token];
         uint256 processed = 0;
         while (cursor + VESTING_EPOCHS <= current && cursor < settled && processed < MAX_EPOCHS_PER_CLAIM) {
-            _creditUnvested(token, cursor, current + 1);
+            // Every exit that can still add weight to `cursor` happened before this epoch, so
+            // `startOfEpoch(current)` already excludes those positions and is already in the past.
+            _creditUnvested(token, cursor, current);
             unchecked {
                 ++cursor;
                 ++processed;
