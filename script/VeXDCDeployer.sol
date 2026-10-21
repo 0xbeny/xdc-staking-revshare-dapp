@@ -47,6 +47,7 @@ library VeXDCDeployer {
     uint256 internal constant HARD_MAX_BPS = 5000;
 
     error InvalidConfig(string what);
+    error GovernanceMustBeAContract(string role, address who);
 
     function validate(Config memory c) internal view {
         if (c.wxdc == address(0)) {
@@ -63,6 +64,19 @@ library VeXDCDeployer {
         }
         if (c.guardian == address(0)) {
             revert InvalidConfig("guardian");
+        }
+        // Chain 50 only. Apothem (51) and local tests may still use an EOA. `ContinueApothemDeploy`
+        // calls this directly, so the check has to live here rather than only in `Deploy._preflight`.
+        if (block.chainid == 50) {
+            if (c.timelock.code.length == 0) {
+                revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
+            }
+            if (c.guardian.code.length == 0) {
+                revert GovernanceMustBeAContract("GUARDIAN", c.guardian);
+            }
+            if (c.timelock == c.guardian) {
+                revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
+            }
         }
         if (c.treasury == address(0)) {
             revert InvalidConfig("treasury");
