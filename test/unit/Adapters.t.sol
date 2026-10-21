@@ -34,6 +34,19 @@ contract AdaptersTest is Base {
         assertEq(usdc.balanceOf(address(pusher)), 0, "adapters never accumulate a balance");
     }
 
+    /// @dev A token already sitting on the adapter is not part of the amount the source pushed.
+    function test_pushForwardsOnlyTheAmountTheSourceSent() public {
+        deal(address(usdc), address(pusher), 500e6);
+
+        vm.startPrank(dapp);
+        usdc.approve(address(pusher), 1000e6);
+        pusher.commitRevenue(address(usdc), 1000e6);
+        vm.stopPrank();
+
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 1000e6, "a donation is not source revenue");
+        assertEq(usdc.balanceOf(address(pusher)), 500e6, "the donation stays in the adapter");
+    }
+
     function test_pushAdapterIsRestrictedToTheRegisteredSource() public {
         vm.startPrank(alice);
         usdc.approve(address(pusher), 1000e6);
