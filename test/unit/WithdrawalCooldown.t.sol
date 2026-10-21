@@ -167,7 +167,7 @@ contract WithdrawalCooldownTest is Base {
         vm.prank(alice);
         escrow.requestEmergencyExit(exiter);
 
-        vm.warp(end + 1);
+        vm.warp(end + 1 days);
         uint256 treasuryBefore = wxdc.balanceOf(treasury);
         uint256 distributorBefore = wxdc.balanceOf(address(distributor));
         vm.prank(alice);
@@ -188,13 +188,49 @@ contract WithdrawalCooldownTest is Base {
         assertEq(distributor.exitForfeitMovements(address(usdc)), 0);
     }
 
+    /// @dev Arming an early exit just outside the "would mature during cooldown" edge must not
+    ///      become a same-block withdraw at `lock.end`. The post-maturity wait still applies.
+    function test_aPreArmedEmergencyExitStillWaitsAfterMaturity() public {
+        uint256 tokenId = _lock(alice, 100 ether, 8 weeks);
+        uint256 end = escrow.locked(tokenId).end;
+        vm.warp(end - 1 days - 1);
+
+        vm.prank(alice);
+        escrow.requestEmergencyExit(tokenId);
+
+        vm.warp(end);
+        uint256 before = wxdc.balanceOf(alice);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(VotingEscrow.CooldownActive.selector, end + 1 days));
+        escrow.emergencyExit(tokenId);
+        assertEq(wxdc.balanceOf(alice), before, "no payout at the maturity timestamp");
+        assertFalse(escrow.closed(tokenId));
+    }
+
+    /// @dev An armed exit that is left unused does not stay executable for the rest of the lock.
+    function test_anArmedExitExpiresIfItIsNotFinalized() public {
+        uint256 tokenId = _lock(alice, 100 ether, 52 weeks);
+        vm.prank(alice);
+        escrow.requestEmergencyExit(tokenId);
+        (uint64 readyAt,,,,) = _exitRequest(tokenId);
+
+        uint256 expiredAt = uint256(readyAt) + escrow.MAX_EXIT_WINDOW();
+        vm.warp(expiredAt + 1);
+        uint256 before = wxdc.balanceOf(alice);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(VotingEscrow.ExitRequestExpired.selector, expiredAt));
+        escrow.emergencyExit(tokenId);
+        assertEq(wxdc.balanceOf(alice), before);
+        assertFalse(escrow.closed(tokenId));
+    }
+
     function test_finalizeAfterMaturityReturnsFullPrincipalAndKeepsYield() public {
         uint256 tokenId = _lock(alice, 100 ether, 4 weeks);
         vm.warp(escrow.locked(tokenId).end - 36 hours);
 
         vm.prank(alice);
         escrow.requestEmergencyExit(tokenId);
-        vm.warp(escrow.locked(tokenId).end + 1);
+        vm.warp(escrow.locked(tokenId).end + 1 days);
 
         uint256 before = wxdc.balanceOf(alice);
         vm.prank(alice);

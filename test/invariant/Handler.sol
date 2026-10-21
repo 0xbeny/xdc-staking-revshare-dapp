@@ -203,6 +203,11 @@ contract Handler is CommonBase, StdCheats, StdUtils {
         if (kind == VotingEscrow.ExitKind.None ? lock.end > block.timestamp : block.timestamp < readyAt) {
             return;
         }
+        if (kind == VotingEscrow.ExitKind.Withdraw && block.timestamp > uint256(readyAt) + ESCROW.MAX_EXIT_WINDOW()) {
+            vm.prank(ESCROW.ownerOf(tokenId));
+            ESCROW.cancelExitRequest(tokenId);
+            return;
+        }
 
         vm.prank(ESCROW.ownerOf(tokenId));
         ESCROW.withdraw(tokenId);
@@ -228,6 +233,12 @@ contract Handler is CommonBase, StdCheats, StdUtils {
                 return;
             }
         } else if (block.timestamp < readyAt) {
+            return;
+        } else if (lock.end <= block.timestamp && block.timestamp < uint256(lock.end) + ESCROW.withdrawalCooldown()) {
+            return;
+        } else if (block.timestamp > uint256(readyAt) + ESCROW.MAX_EXIT_WINDOW()) {
+            vm.prank(ESCROW.ownerOf(tokenId));
+            ESCROW.cancelExitRequest(tokenId);
             return;
         }
 
