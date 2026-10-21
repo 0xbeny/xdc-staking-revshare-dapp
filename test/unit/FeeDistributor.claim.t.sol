@@ -6,9 +6,13 @@ import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {IRevenueRegistry} from "../../src/interfaces/IRevenueRegistry.sol";
 import {Base} from "../Base.t.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {StdStorage, stdStorage} from "forge-std/StdStorage.sol";
 
 contract FeeDistributorClaimTest is Base {
+    using stdStorage for StdStorage;
+
     uint256 internal a;
+    StdStorage private _store;
 
     function setUp() public override {
         super.setUp();
@@ -87,6 +91,33 @@ contract FeeDistributorClaimTest is Base {
         _vest();
         _claim(carol, a, address(usdc));
         assertEq(usdc.balanceOf(alice) - before, 1000e6);
+    }
+
+    /// @dev A recipient of the distributor itself makes `claim` transfer tokens to the
+    ///      contract that just reduced `accounted`. The next sync treats that balance as new
+    ///      revenue and counts the same tokens twice.
+    function test_claimToTheDistributorDoesNotRecycleRewards() public {
+        _notifyExact(address(usdc), 1000e6);
+        _nextEpoch();
+        _vest();
+
+        _store.target(address(distributor)).sig("recipientOf(uint256)").with_key(a).checked_write(address(distributor));
+
+        uint256 notified = distributor.totalNotified(address(usdc));
+        uint256 aliceBefore = usdc.balanceOf(alice);
+        _claim(carol, a, address(usdc));
+        distributor.syncForfeiture(address(usdc));
+
+        assertEq(distributor.totalNotified(address(usdc)), notified, "the same tokens are not notified again");
+        assertEq(usdc.balanceOf(alice) - aliceBefore, 1000e6, "the owner is paid");
+        assertEq(distributor.totalPenaltyReceived(address(usdc)), 0, "a claim is not a penalty");
+        assertEq(usdc.balanceOf(address(distributor)), distributor.accounted(address(usdc)));
+    }
+
+    function test_setRecipientRejectsTheDistributor() public {
+        vm.prank(alice);
+        vm.expectRevert(FeeDistributor.InvalidRecipient.selector);
+        distributor.setRecipient(a, address(distributor));
     }
 
     function test_setRecipientSplitsCustodyFromCashFlow() public {

@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Base} from "../Base.t.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// @dev M-6: a zero principal penalty must not let a one-week lock collect that week's fees.
 contract FeeDistributorVestingTest is Base {
@@ -29,6 +30,36 @@ contract FeeDistributorVestingTest is Base {
         _warpEpochs(distributor.VESTING_EPOCHS() + 1);
         bobGot += _claim(bob, bobId, address(usdc));
         assertApproxEqAbs(bobGot, 1000e6, 2, "the stayer receives both halves");
+    }
+
+    /// @dev By the time an unvested week can be harvested, every exit that could touch it has
+    ///      already happened, so the snapshot at the start of the harvest epoch already excludes
+    ///      those positions. Crediting the following epoch lets someone lock after the amount is
+    ///      known and enter that later snapshot.
+    function test_unvestedForfeitIsCreditedToTheEpochAlreadySnapshotted() public {
+        vm.warp(_epochStart(_currentEpoch() + 1));
+        uint256 aliceId = _lock(alice, 100_000 ether, 104 weeks);
+        _lock(bob, 100_000 ether, 104 weeks);
+        _nextEpoch();
+        uint256 earned = _currentEpoch();
+        _notifyExact(address(usdc), 1000e6);
+        _nextEpoch();
+
+        vm.prank(alice);
+        escrow.emergencyExit(aliceId);
+
+        _warpEpochs(distributor.VESTING_EPOCHS() - 1);
+        uint256 harvestEpoch = _currentEpoch();
+        assertEq(harvestEpoch, earned + distributor.VESTING_EPOCHS());
+
+        vm.recordLogs();
+        distributor.settle(address(usdc), 52);
+        assertTrue(_forfeitureCreditedTo(harvestEpoch), "unvested forfeit is emitted for the snapshot epoch");
+
+        uint256 forwarded = distributor.exitForfeitMovements(address(usdc));
+        assertGt(forwarded, 0);
+        assertEq(distributor.epochRevenue(address(usdc), harvestEpoch), forwarded, "credited to the closed snapshot");
+        assertEq(distributor.epochRevenue(address(usdc), harvestEpoch + 1), 0, "not deferred a further epoch");
     }
 
     function test_aPositionThatStaysClaimsAfterTheVest() public {
@@ -101,6 +132,21 @@ contract FeeDistributorVestingTest is Base {
         assertApproxEqAbs(aliceGot + bobGot, 9000e6, 20, "every notified dollar reaches a locker");
         assertApproxEqAbs(usdc.balanceOf(address(distributor)), 0, 20, "nothing stranded");
         assertLt(aliceGot, bobGot, "the early exit keeps strictly less");
+    }
+
+    function _forfeitureCreditedTo(uint256 creditedEpoch) internal view returns (bool) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = keccak256("ForfeitureSynced(address,uint256,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(distributor) || logs[i].topics.length == 0 || logs[i].topics[0] != topic) {
+                continue;
+            }
+            (, uint256 epoch) = abi.decode(logs[i].data, (uint256, uint256));
+            if (epoch == creditedEpoch) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _claimRaw(address who, uint256 tokenId) internal returns (uint256) {

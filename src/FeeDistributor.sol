@@ -151,6 +151,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     error NotAuthorized();
     error StaleEpoch();
     error OutsideKeeperWindow();
+    error InvalidRecipient();
 
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
@@ -563,7 +564,9 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         uint256 settled = settledEpoch[token];
         uint256 processed = 0;
         while (cursor + VESTING_EPOCHS <= current && cursor < settled && processed < MAX_EPOCHS_PER_CLAIM) {
-            _creditUnvested(token, cursor, current + 1);
+            // Every exit that can still add weight to `cursor` happened before this epoch, so
+            // `startOfEpoch(current)` already excludes those positions and is already in the past.
+            _creditUnvested(token, cursor, current);
             unchecked {
                 ++cursor;
                 ++processed;
@@ -590,6 +593,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
         epochRevenue[token][dest] += moved;
         exitForfeitMovements[token] += moved;
+        emit ForfeitureSynced(token, moved, dest);
     }
 
     function _cursor(uint256 tokenId, address token) internal view returns (uint256) {
@@ -618,7 +622,10 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     function _recipient(uint256 tokenId) internal view returns (address) {
         address to = recipientOf[tokenId];
-        return to == address(0) ? escrow.ownerOf(tokenId) : to;
+        if (to == address(0) || to == address(this)) {
+            return escrow.ownerOf(tokenId);
+        }
+        return to;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -638,6 +645,11 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     /// @notice Custody / cash-flow separation. No transfers exist, so there is no reset logic.
     function setRecipient(uint256 tokenId, address to) external onlyPositionOwner(tokenId) {
+        // A claim paid to this contract does not reduce its token balance, so the next
+        // forfeiture sync would count those tokens as new revenue.
+        if (to == address(this)) {
+            revert InvalidRecipient();
+        }
         recipientOf[tokenId] = to;
         emit RecipientSet(tokenId, to);
     }

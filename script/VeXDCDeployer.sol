@@ -47,6 +47,7 @@ library VeXDCDeployer {
     uint256 internal constant HARD_MAX_BPS = 5000;
 
     error InvalidConfig(string what);
+    error GovernanceMustBeAContract(string role, address who);
 
     function validate(Config memory c) internal view {
         if (c.wxdc == address(0)) {
@@ -64,6 +65,7 @@ library VeXDCDeployer {
         if (c.guardian == address(0)) {
             revert InvalidConfig("guardian");
         }
+        _requireMainnetGovernance(c);
         if (c.treasury == address(0)) {
             revert InvalidConfig("treasury");
         }
@@ -78,6 +80,23 @@ library VeXDCDeployer {
         }
         if (c.rewardTokens.length == 0) {
             revert InvalidConfig("no reward tokens");
+        }
+    }
+
+    /// @dev Chain 50 only. Apothem (51) and local tests may still use an EOA. `ContinueApothemDeploy`
+    ///      calls `validate` directly, so this cannot live only in `Deploy._preflight`.
+    function _requireMainnetGovernance(Config memory c) private view {
+        if (block.chainid != 50) {
+            return;
+        }
+        if (c.timelock.code.length == 0) {
+            revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
+        }
+        if (c.guardian.code.length == 0) {
+            revert GovernanceMustBeAContract("GUARDIAN", c.guardian);
+        }
+        if (c.timelock == c.guardian) {
+            revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
         }
     }
 

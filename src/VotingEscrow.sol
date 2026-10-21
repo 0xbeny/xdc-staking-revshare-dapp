@@ -84,6 +84,8 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     uint256 public constant HARD_MAX_PENALTY_SPLIT_BPS = 5000;
     /// @notice Hard ceiling on the exit cooldown (request → finalize). Immutable.
     uint256 public constant HARD_MAX_WITHDRAWAL_COOLDOWN = 7 days;
+    /// @notice How long an armed exit stays executable after `readyAt` while the lock is still live.
+    uint256 public constant MAX_EXIT_WINDOW = 7 days;
 
     /// @notice Upper bound on weeks traversed by a single checkpoint pass (~4.9 years).
     uint256 private constant MAX_WEEK_STEPS = 255;
@@ -274,6 +276,7 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     error NoExitRequest();
     error WrongExitKind();
     error CooldownActive(uint256 readyAt);
+    error ExitRequestExpired(uint256 expiredAt);
     error LockMaturesDuringCooldown();
     error NotOptedIn();
     error OutsideKeeperWindow();
@@ -1162,6 +1165,12 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
         _requireCooldownElapsed(req.readyAt);
 
         if (lock.end <= block.timestamp) {
+            // A request armed before maturity must not skip the wait that `withdraw` imposes
+            // once the lock has actually ended.
+            uint256 matureAt = uint256(lock.end) + withdrawalCooldown;
+            if (block.timestamp < matureAt) {
+                revert CooldownActive(matureAt);
+            }
             _payOutMature(tokenId, owner, lock);
             return;
         }
@@ -1235,6 +1244,10 @@ contract VotingEscrow is ERC721, ReentrancyGuard {
     function _requireCooldownElapsed(uint64 readyAt) private view {
         if (block.timestamp < readyAt) {
             revert CooldownActive(readyAt);
+        }
+        uint256 expiredAt = uint256(readyAt) + MAX_EXIT_WINDOW;
+        if (block.timestamp > expiredAt) {
+            revert ExitRequestExpired(expiredAt);
         }
     }
 

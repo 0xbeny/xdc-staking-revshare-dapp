@@ -69,6 +69,7 @@ contract Attestor is Context, ReentrancyGuard {
     error DuplicateRecord();
     error SourceEpochNotClosed();
     error NegativeNet();
+    error CannotPostRevenue();
 
     /// @param authority_ `SystemAccess` hub. `REPORTER_ROLE` for this contract is granted there.
     /// @param dapp_ Immutable dApp identity for every record this instance posts.
@@ -118,6 +119,12 @@ contract Attestor is Context, ReentrancyGuard {
         // `signedNet < 0` already reverted above.
         // forge-lint: disable-next-line(unsafe-typecast)
         net = uint256(signedNet);
+        // A funded post reverts inside `notifyRevenue` when the distributor will not take it.
+        // A zero net skips that call, so the same refusal has to be checked here or the
+        // `(dapp, token, sourceEpoch)` key is burned with nothing distributed.
+        if (net == 0 && !IFeeDistributor(DISTRIBUTOR).canNotifyRevenue(address(this), token)) {
+            revert CannotPostRevenue();
+        }
 
         uint64 distributionEpoch = EpochTime.currentEpoch().toUint64();
         posted[k] = true;

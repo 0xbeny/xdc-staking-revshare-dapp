@@ -6,16 +6,19 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Mode B2 — PullAdapter on a *dedicated fee Safe*. The Safe grants an allowance to this
-///         immutable adapter only. `skim` sweeps the Safe's full balance: committed →
+///         immutable adapter only. `skim` pulls what that allowance still covers: committed →
 ///         distributor, remainder → dApp treasury.
-/// @dev Unified B2/B3 invariant (§3.2 #7): after a successful sweep the fee Safe's balance is
-///      zero, so everything that ever enters that address is definitionally revenue. This is
-///      also why the Safe must be dedicated — commingled treasury capital must never be taxed.
+/// @dev Unified B2/B3 invariant (§3.2 #7): a full allowance empties the fee Safe, so everything
+///      that enters that address is definitionally revenue. This is also why the Safe must be
+///      dedicated — commingled treasury capital must never be taxed. A revoked allowance must
+///      not trap a locker share the adapter already holds.
 contract PullAdapter is RevenueAdapterBase {
     using SafeERC20 for IERC20;
 
     /// @notice The dedicated fee Safe. Must not be a general treasury Safe.
     address public immutable FEE_SAFE;
+
+    error InvalidFeeSafe();
 
     constructor(
         address source_,
@@ -28,13 +31,18 @@ contract PullAdapter is RevenueAdapterBase {
         if (feeSafe_ == address(0)) {
             revert ZeroAddress();
         }
+        if (feeSafe_ == dappTreasury_ || feeSafe_ == distributor_) {
+            revert InvalidFeeSafe();
+        }
         FEE_SAFE = feeSafe_;
     }
 
     function skim(address token) external nonReentrant returns (uint256 committed, uint256 remainder) {
         _requireSupported(token);
         uint256 balance = IERC20(token).balanceOf(FEE_SAFE);
-        if (balance == 0) {
+        uint256 allowance = IERC20(token).allowance(FEE_SAFE, address(this));
+        uint256 pullable = balance < allowance ? balance : allowance;
+        if (pullable == 0) {
             if (pendingCommitted[token] == 0) {
                 revert NothingToSkim();
             }
@@ -45,7 +53,7 @@ contract PullAdapter is RevenueAdapterBase {
         // an allowance, the destination is this contract, and the split targets are immutable.
         // forge-lint: disable-start(arbitrary-send-erc20)
         // slither-disable-next-line arbitrary-send-erc20
-        IERC20(token).safeTransferFrom(FEE_SAFE, address(this), balance);
+        IERC20(token).safeTransferFrom(FEE_SAFE, address(this), pullable);
         // forge-lint: disable-end(arbitrary-send-erc20)
         return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
     }

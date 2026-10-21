@@ -106,6 +106,27 @@ contract AttestorTest is Base {
         assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 0);
     }
 
+    /// @dev A zero-net attestation still consumes `(dapp, token, sourceEpoch)`. It must not do
+    ///      that while the distributor would refuse the same reporter's funded post.
+    function test_zeroNetDoesNotBurnTheEpochWhileTheDistributorRefusesIt() public {
+        vm.prank(guardian);
+        distributor.pause();
+
+        uint64 sourceEpoch = uint64(_currentEpoch() - 1);
+        bytes32 recordKey = attestor.key(dapp, address(usdc), sourceEpoch);
+        vm.prank(reporter);
+        vm.expectRevert(Attestor.CannotPostRevenue.selector);
+        attestor.postRevenue(address(usdc), sourceEpoch, 1000e6, -1000e6, "fully offset");
+
+        assertFalse(attestor.posted(recordKey), "a refused attestation must not consume the source epoch");
+
+        vm.prank(timelock);
+        distributor.unpause();
+        vm.prank(reporter);
+        attestor.postRevenue(address(usdc), sourceEpoch, 1000e6, -1000e6, "fully offset");
+        assertTrue(attestor.posted(recordKey), "the same source epoch can be posted once revenue is accepted");
+    }
+
     function test_onlyReporterRoleCanPost() public {
         bytes32 role = attestor.REPORTER_ROLE();
         uint64 sourceEpoch = uint64(_currentEpoch() - 1);

@@ -14,6 +14,7 @@ contract ZodiacFeeModule is RevenueAdapterBase {
     address public immutable FEE_SAFE;
 
     error SafeExecutionFailed();
+    error InvalidFeeSafe();
     /// @notice Safe `exec` returned success but the fee Safe was not emptied / adapter did not
     ///         receive the pre-skim balance (e.g. a token that returns `false` on `transfer`).
     error SweepIncomplete();
@@ -29,6 +30,9 @@ contract ZodiacFeeModule is RevenueAdapterBase {
         if (feeSafe_ == address(0)) {
             revert ZeroAddress();
         }
+        if (feeSafe_ == dappTreasury_ || feeSafe_ == distributor_) {
+            revert InvalidFeeSafe();
+        }
         FEE_SAFE = feeSafe_;
     }
 
@@ -43,10 +47,20 @@ contract ZodiacFeeModule is RevenueAdapterBase {
         }
 
         uint256 before = IERC20(token).balanceOf(address(this));
-        bool ok = IAvatar(FEE_SAFE)
-            .execTransactionFromModule(token, 0, abi.encodeCall(IERC20.transfer, (address(this), balance)), 0);
-        if (!ok) {
-            revert SafeExecutionFailed();
+        bool pulled;
+        try IAvatar(FEE_SAFE)
+            .execTransactionFromModule(token, 0, abi.encodeCall(IERC20.transfer, (address(this), balance)), 0) returns (
+            bool ok
+        ) {
+            pulled = ok;
+        } catch {
+            pulled = false;
+        }
+        if (!pulled) {
+            if (pendingCommitted[token] == 0) {
+                revert SafeExecutionFailed();
+            }
+            return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
         }
 
         // Raw `transfer` via the Safe does not go through SafeERC20. Tokens that return `false`

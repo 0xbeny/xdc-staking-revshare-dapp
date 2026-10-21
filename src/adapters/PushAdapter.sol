@@ -34,12 +34,13 @@ contract PushAdapter is RevenueAdapterBase {
             revert NothingToSkim();
         }
 
+        uint256 before = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(_msgSender(), address(this), amount);
-        uint256 balance = IERC20(token).balanceOf(address(this));
+        uint256 received = IERC20(token).balanceOf(address(this)) - before;
 
-        IERC20(token).forceApprove(DISTRIBUTOR, balance);
+        IERC20(token).forceApprove(DISTRIBUTOR, received);
         // forge-lint: disable-next-line(reentrancy-no-eth)
-        IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, balance);
-        emit RevenuePushed(token, balance);
+        IFeeDistributor(DISTRIBUTOR).notifyRevenue(token, received);
+        emit RevenuePushed(token, received);
     }
 }
