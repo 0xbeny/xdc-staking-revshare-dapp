@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {FeeSplitter} from "../../src/adapters/FeeSplitter.sol";
+import {PullAdapter} from "../../src/adapters/PullAdapter.sol";
 import {PushAdapter} from "../../src/adapters/PushAdapter.sol";
 import {RevenueAdapterBase} from "../../src/adapters/RevenueAdapterBase.sol";
 import {ZodiacFeeModule} from "../../src/adapters/ZodiacFeeModule.sol";
@@ -176,8 +177,9 @@ contract AdaptersTest is Base {
             new ZodiacFeeModule(dapp, address(distributor), dappTreasury, 2500, tokens, address(otherSafe));
 
         deal(address(usdc), address(otherSafe), 1000e6);
-        vm.expectRevert(MockSafe.NotAModule.selector);
+        vm.expectRevert(ZodiacFeeModule.SafeExecutionFailed.selector);
         rogue.skim(address(usdc));
+        assertEq(usdc.balanceOf(address(otherSafe)), 1000e6, "a rejected module moves nothing");
     }
 
     function test_doubleSweepOfAFeeSafeMovesZero() public {
@@ -185,6 +187,72 @@ contract AdaptersTest is Base {
         puller.skim(address(usdc));
         vm.expectRevert(RevenueAdapterBase.NothingToSkim.selector);
         puller.skim(address(usdc));
+    }
+
+    /// @dev Dust left in the fee Safe after the allowance is revoked must not trap the locker share
+    ///      already sitting on the adapter.
+    function test_pullSkimForwardsHeldShareWhenTheSafeRevokesAllowance() public {
+        vm.prank(guardian);
+        distributor.pause();
+        deal(address(usdc), address(feeSafe), 10_000e6);
+        puller.skim(address(usdc));
+        assertEq(puller.pendingCommitted(address(usdc)), 2500e6);
+
+        vm.prank(timelock);
+        distributor.unpause();
+        feeSafe.approveToken(address(usdc), address(puller), 0);
+        deal(address(usdc), address(feeSafe), 1);
+
+        puller.skim(address(usdc));
+
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 2500e6);
+        assertEq(usdc.balanceOf(address(feeSafe)), 1, "unpullable dust stays in the fee Safe");
+        assertEq(usdc.balanceOf(address(puller)), 0);
+        assertEq(puller.pendingCommitted(address(usdc)), 0);
+    }
+
+    /// @dev A module the Safe will no longer execute must still be able to deliver a share it already holds.
+    function test_zodiacSkimForwardsHeldShareWhenExecutionFails() public {
+        vm.prank(guardian);
+        distributor.pause();
+        deal(address(usdc), address(feeSafeB3), 10_000e6);
+        zodiac.skim(address(usdc));
+        assertEq(zodiac.pendingCommitted(address(usdc)), 2500e6);
+
+        vm.prank(timelock);
+        distributor.unpause();
+        deal(address(usdc), address(feeSafeB3), 1);
+        feeSafeB3.setExecFails(true);
+
+        zodiac.skim(address(usdc));
+
+        assertEq(distributor.epochRevenue(address(usdc), _currentEpoch()), 2500e6);
+        assertEq(usdc.balanceOf(address(feeSafeB3)), 1, "unpullable dust stays in the fee Safe");
+        assertEq(usdc.balanceOf(address(zodiac)), 0);
+        assertEq(zodiac.pendingCommitted(address(usdc)), 0);
+    }
+
+    function test_feeSafeCannotBeTheTreasuryOrTheDistributor() public {
+        vm.expectRevert(PullAdapter.InvalidFeeSafe.selector);
+        this.deployPull(dappTreasury);
+        vm.expectRevert(PullAdapter.InvalidFeeSafe.selector);
+        this.deployPull(address(distributor));
+        vm.expectRevert(ZodiacFeeModule.InvalidFeeSafe.selector);
+        this.deployZodiac(dappTreasury);
+        vm.expectRevert(ZodiacFeeModule.InvalidFeeSafe.selector);
+        this.deployZodiac(address(distributor));
+    }
+
+    function deployPull(address feeSafe) external returns (PullAdapter) {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        return new PullAdapter(dapp, address(distributor), dappTreasury, 2500, tokens, feeSafe);
+    }
+
+    function deployZodiac(address feeSafe) external returns (ZodiacFeeModule) {
+        address[] memory tokens = new address[](1);
+        tokens[0] = address(usdc);
+        return new ZodiacFeeModule(dapp, address(distributor), dappTreasury, 2500, tokens, feeSafe);
     }
 
     function test_adapterExposesItsFixedTokenSet() public view {
