@@ -151,6 +151,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
     error NotAuthorized();
     error StaleEpoch();
     error OutsideKeeperWindow();
+    error InvalidRecipient();
 
     /*//////////////////////////////////////////////////////////////
                              INITIALIZATION
@@ -618,7 +619,10 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     function _recipient(uint256 tokenId) internal view returns (address) {
         address to = recipientOf[tokenId];
-        return to == address(0) ? escrow.ownerOf(tokenId) : to;
+        if (to == address(0) || to == address(this)) {
+            return escrow.ownerOf(tokenId);
+        }
+        return to;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -638,6 +642,11 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     /// @notice Custody / cash-flow separation. No transfers exist, so there is no reset logic.
     function setRecipient(uint256 tokenId, address to) external onlyPositionOwner(tokenId) {
+        // A claim paid to this contract does not reduce its token balance, so the next
+        // forfeiture sync would count those tokens as new revenue.
+        if (to == address(this)) {
+            revert InvalidRecipient();
+        }
         recipientOf[tokenId] = to;
         emit RecipientSet(tokenId, to);
     }
