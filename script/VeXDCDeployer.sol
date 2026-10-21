@@ -65,19 +65,7 @@ library VeXDCDeployer {
         if (c.guardian == address(0)) {
             revert InvalidConfig("guardian");
         }
-        // Chain 50 only. Apothem (51) and local tests may still use an EOA. `ContinueApothemDeploy`
-        // calls this directly, so the check has to live here rather than only in `Deploy._preflight`.
-        if (block.chainid == 50) {
-            if (c.timelock.code.length == 0) {
-                revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
-            }
-            if (c.guardian.code.length == 0) {
-                revert GovernanceMustBeAContract("GUARDIAN", c.guardian);
-            }
-            if (c.timelock == c.guardian) {
-                revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
-            }
-        }
+        _requireMainnetGovernance(c);
         if (c.treasury == address(0)) {
             revert InvalidConfig("treasury");
         }
@@ -92,6 +80,23 @@ library VeXDCDeployer {
         }
         if (c.rewardTokens.length == 0) {
             revert InvalidConfig("no reward tokens");
+        }
+    }
+
+    /// @dev Chain 50 only. Apothem (51) and local tests may still use an EOA. `ContinueApothemDeploy`
+    ///      calls `validate` directly, so this cannot live only in `Deploy._preflight`.
+    function _requireMainnetGovernance(Config memory c) private view {
+        if (block.chainid != 50) {
+            return;
+        }
+        if (c.timelock.code.length == 0) {
+            revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
+        }
+        if (c.guardian.code.length == 0) {
+            revert GovernanceMustBeAContract("GUARDIAN", c.guardian);
+        }
+        if (c.timelock == c.guardian) {
+            revert GovernanceMustBeAContract("TIMELOCK", c.timelock);
         }
     }
 
