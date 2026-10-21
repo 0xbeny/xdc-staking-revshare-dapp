@@ -593,6 +593,7 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
         }
         epochRevenue[token][dest] += moved;
         exitForfeitMovements[token] += moved;
+        emit ForfeitureSynced(token, moved, dest);
     }
 
     function _cursor(uint256 tokenId, address token) internal view returns (uint256) {

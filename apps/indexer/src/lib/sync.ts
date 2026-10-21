@@ -404,6 +404,14 @@ async function processVotingEscrowLog(
   }
 }
 
+/**
+ * Pot stored for an `EpochSettled` row.
+ * A zero-supply epoch is emptied on chain, but the event still reports the pre-zero pot.
+ */
+export function recordedPot(supply: bigint, pot: bigint): bigint {
+  return supply === 0n ? 0n : pot;
+}
+
 async function processFeeDistributorLog(
   db: Db,
   chainId: number,
@@ -446,16 +454,17 @@ async function processFeeDistributorLog(
       const { token, epoch, supply, pot, movedForward } = decoded.args;
       const tokenNorm = normalizeAddress(token);
       const epochStr = epoch.toString(10);
+      const storedPot = recordedPot(supply, pot);
       await db
         .insert(epochs)
         .values({
           chainId,
           token: tokenNorm,
           epoch: epochStr,
-          revenue: pot.toString(10),
+          revenue: storedPot.toString(10),
           settled: true,
           supply: supply.toString(10),
-          pot: pot.toString(10),
+          pot: storedPot.toString(10),
           forfeited: "0",
         })
         .onConflictDoUpdate({
@@ -463,7 +472,9 @@ async function processFeeDistributorLog(
           set: {
             settled: true,
             supply: supply.toString(10),
-            pot: pot.toString(10),
+            pot: storedPot.toString(10),
+            // A prior notify stored the pre-zero pot. The chain then emptied this epoch.
+            ...(supply === 0n ? { revenue: storedPot.toString(10) } : {}),
           },
         });
       if (movedForward > 0n) {

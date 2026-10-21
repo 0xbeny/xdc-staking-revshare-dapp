@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Base} from "../Base.t.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 /// @dev M-6: a zero principal penalty must not let a one-week lock collect that week's fees.
 contract FeeDistributorVestingTest is Base {
@@ -51,7 +52,9 @@ contract FeeDistributorVestingTest is Base {
         uint256 harvestEpoch = _currentEpoch();
         assertEq(harvestEpoch, earned + distributor.VESTING_EPOCHS());
 
+        vm.recordLogs();
         distributor.settle(address(usdc), 52);
+        assertTrue(_forfeitureCreditedTo(harvestEpoch), "unvested forfeit is emitted for the snapshot epoch");
 
         uint256 forwarded = distributor.exitForfeitMovements(address(usdc));
         assertGt(forwarded, 0);
@@ -129,6 +132,21 @@ contract FeeDistributorVestingTest is Base {
         assertApproxEqAbs(aliceGot + bobGot, 9000e6, 20, "every notified dollar reaches a locker");
         assertApproxEqAbs(usdc.balanceOf(address(distributor)), 0, 20, "nothing stranded");
         assertLt(aliceGot, bobGot, "the early exit keeps strictly less");
+    }
+
+    function _forfeitureCreditedTo(uint256 creditedEpoch) internal view returns (bool) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 topic = keccak256("ForfeitureSynced(address,uint256,uint256)");
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter != address(distributor) || logs[i].topics.length == 0 || logs[i].topics[0] != topic) {
+                continue;
+            }
+            (, uint256 epoch) = abi.decode(logs[i].data, (uint256, uint256));
+            if (epoch == creditedEpoch) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _claimRaw(address who, uint256 tokenId) internal returns (uint256) {
