@@ -46,6 +46,8 @@ contract SystemAccess is ISystemAccess, AccessControl {
             return;
         }
         _has[target][role][account] = true;
+        // Membership is checked via `_has` above, so the set's bool result carries no information.
+        // slither-disable-next-line unused-return
         _members[target][role].add(account);
         emit TargetRoleGranted(target, role, account, _msgSender());
     }
@@ -74,6 +76,8 @@ contract SystemAccess is ISystemAccess, AccessControl {
             return;
         }
         _has[target][role][account] = false;
+        // Membership is checked via `_has` above, so the set's bool result carries no information.
+        // slither-disable-next-line unused-return
         _members[target][role].remove(account);
         emit TargetRoleRevoked(target, role, account, _msgSender());
     }

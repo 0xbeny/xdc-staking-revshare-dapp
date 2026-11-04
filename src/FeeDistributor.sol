@@ -465,8 +465,10 @@ contract FeeDistributor is IFeeDistributor, PausableUpgradeable, ReentrancyGuard
 
     function _exitPending(uint256 tokenId) internal view returns (bool pending) {
         // Only the kind matters here; the other fields are the frozen exit quote.
+        // slither-disable-start unused-return
         // forge-lint: disable-next-line(unused-return)
         (, uint8 kind,,,,) = escrow.exitRequest(tokenId);
+        // slither-disable-end unused-return
         pending = kind != 0;
     }
 
