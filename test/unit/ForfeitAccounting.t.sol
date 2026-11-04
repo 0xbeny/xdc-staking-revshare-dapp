@@ -216,7 +216,8 @@ contract ForfeitAccountingTest is Base {
         _assertAllSettledEpochsConserved(address(usdc), first);
         _assertSolvent(address(usdc));
 
-        uint256 expectedCarol = (R * escrow.balanceOfNFTAt(c, _epochStart(e0))) / escrow.totalSupplyAtWeek(_epochStart(e0));
+        uint256 expectedCarol =
+            (R * escrow.balanceOfNFTAt(c, _epochStart(e0))) / escrow.totalSupplyAtWeek(_epochStart(e0));
         uint256 total = _drain(address(usdc), 2); // carol first, then alice, bob last
         assertEq(claimedBy[c], expectedCarol, "exiter keeps only the vested epoch e0");
         assertLe(total, 9 * R, "paid more than notified");
@@ -413,7 +414,7 @@ contract ForfeitAccountingTest is Base {
         address[4] memory who = [alice, bob, carol, dave];
         uint256 first = _currentEpoch() + 1;
         for (uint256 i; i < 4; ++i) {
-            uint256 amt = bound(uint256(amounts[i]), 1_000 ether, 1_000_000 ether);
+            uint256 amt = bound(uint256(amounts[i]), 1000 ether, 1_000_000 ether);
             uint256 dur = bound(uint256(durWeeks[i]), 2, 104) * 1 weeks;
             _add(who[i], amt, dur);
         }
