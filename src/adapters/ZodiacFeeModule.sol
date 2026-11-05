@@ -66,10 +66,13 @@ contract ZodiacFeeModule is RevenueAdapterBase {
         // Raw `transfer` via the Safe does not go through SafeERC20. Tokens that return `false`
         // (or otherwise fail to move the full balance) must not look like a successful skim.
         uint256 received = IERC20(token).balanceOf(address(this)) - before;
+        // Reviewed: skim is nonReentrant and a stale pre-call balance only reverts here, never pays.
+        // slither-disable-start reentrancy-balance
         // forge-lint: disable-next-line(incorrect-strict-equality)
         if (IERC20(token).balanceOf(FEE_SAFE) != 0 || received != balance) {
             revert SweepIncomplete();
         }
+        // slither-disable-end reentrancy-balance
 
         return _splitAndForward(token, IERC20(token).balanceOf(address(this)));
     }
